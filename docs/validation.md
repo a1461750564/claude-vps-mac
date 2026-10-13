@@ -20,6 +20,8 @@
 
 - Mac 启动器的实际地址和主机别名改为私有 JSON 配置；从 PATH 查找 Mosh。
 - Bash hook 的 mac-run 位置由当前用户 home 取得，shell 参数进行引用。
+- mac-run 在 Mac 端导出 `MAC_PROJECT_DIR`、`MAC_PROJECT_MOUNT`；该行为与原部署 2026-10-13 的线上版本一致。
+- mac-project 的进程组清理会在原有时限内重试短暂 `EPERM`，持续权限错误仍报失败；本项修复尚未部署到线上。
 - 其余核心操作脚本保留原部署实现，包括历史状态目录名 orca-control。
 - 不复制节点部署、系统安全改造、账号迁移、技能、私有日志或插件原型；人工文档替代绑定旧机器的准备脚本。
 
@@ -27,17 +29,16 @@
 
 ## 本地验证结果
 
-五个 Python 入口/脚本编译通过；root 分发 shell 的 bash -n 通过；四份 JSON 示例解析通过。
+v0.1.0 整理时的 20 项一次性行为检查，已在 v0.2.0 固化并补充为 `tests/` 下的 51 项单元测试（Python 标准库，不联网、不调用模型），并由 CI 在 Ubuntu 与 macOS 运行：
 
-20 项一次性行为检查通过，网络和 exec 用替身截获，无网络或模型请求：
+- 启动器：交互会话使用 Mosh；help/version/print、子命令、非终端和 claude-ssh 使用 SSH；端口池满、Tailscale 预检失败、未安装 Mosh 时回退；占位、公网地址、以 `-` 开头的别名等配置先拒绝；带中文空格的项目路径与含 shell 元字符的参数经 SSH 引用后恢复原 argv。
+- Bash hook：保留 timeout/run_in_background；`#vps`、mac-project 与单独 cd 例外；异常输入返回 deny，非 Mac 会话不输出。
+- mac-run：cwd 与命令内挂载路径映射，导出项目变量，挂载外与同名前缀目录拒绝执行。
+- claude-mac：过宽目录拒绝，挂载缓存参数是否过时。
+- mac-project：两层 shell 引用往返；Mac 端守护的退出码、stdin、遗留后台进程、断开通道（返回 129）与 TERM（返回 143）清理整组，以及短暂权限错误重试和持续权限错误报告，仅在 macOS 运行。
+- 仓库：脚本语法、示例 JSON 与占位、私钥头和常见令牌扫描。
 
-- 默认/继续会话使用 Mosh；help/version/print、子命令、非终端和强制 SSH 使用 SSH。
-- 端口满、Tailscale 预检失败、未安装 Mosh 时正确选择回退路径。
-- 带中文空格的项目路径、包含 shell 元字符的提示通过 SSH 引用后能恢复原 argv。
-- 占位配置先拒绝；Bash hook 保留 timeout/run_in_background、支持明确 VPS/cd 例外、异常输入返回 deny。
-- mac-run 映射 cwd 与绝对路径，挂载外拒绝执行；过宽根目录被拒绝。
-
-仓库文本经过私钥头、常见访问令牌、UUID 和原部署资产标识扫描；未发现匹配项。仅以明确清单导出文件，未初始化或上传原服务器运维目录。
+断连清理修复后，本机系统 Python 的 51 项测试通过；额外连续运行断连用例 100 次，均返回 129 并确认子进程消失。忽略 TERM 的独立用例也在 KILL 升级后完成清理，返回 129。
 
 ## 每次新部署仍需验收
 
