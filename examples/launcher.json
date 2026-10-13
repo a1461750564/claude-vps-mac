@@ -1,0 +1,5 @@
+{
+  "ssh_alias": "CLAUDE-VPS",
+  "tailscale_host": "__VPS_TAILSCALE_IPV4__",
+  "host_key_alias": "__VPS_PUBLIC_HOSTNAME_OR_IP__"
+}

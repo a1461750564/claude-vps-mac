@@ -1,0 +1,14 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+private/
+local/
+*.pem
+*.key
+id_ed25519*
+id_rsa*
+*.credentials.json
+settings.local.json
+launcher.local.json
+.env
+.env.*

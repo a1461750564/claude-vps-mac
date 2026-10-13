@@ -1,0 +1,28 @@
+{
+  "model": "opus",
+  "modelSettings": {
+    "claude-opus-5-5": {"effortLevel": "xhigh"},
+    "claude-opus-4-8": {"effortLevel": "xhigh"}
+  },
+  "permissions": {"defaultMode": "bypassPermissions"},
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "DO_NOT_TRACK": "1",
+    "OTEL_METRICS_EXPORTER": "none",
+    "OTEL_LOGS_EXPORTER": "none",
+    "OTEL_TRACES_EXPORTER": "none"
+  },
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "/usr/bin/python3 /home/claude/.claude/hooks/route-bash-to-mac.py",
+        "timeout": 10
+      }]
+    }]
+  }
+}
