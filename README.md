@@ -13,6 +13,7 @@
 | 直接修改 Mac 文件 | Read/Edit/Write 操作 SSHFS 实时挂载 |
 | 使用 Mac 的依赖与测试环境 | Bash hook 自动经 SSH 路由到 Mac |
 | 新会话不等 git 扫描挂载 | CLI 自身的 git 调用经 PATH 包装在 Mac 执行 |
+| 全项目搜索在 Mac 本地执行 | Glob/Grep 使用 PATH 上的 rg 包装，结果路径映射回挂载 |
 | 改善跨境终端输入体验 | 默认 Mosh 对话，保留 SSH 入口 |
 
 ## 架构

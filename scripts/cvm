@@ -36,6 +36,7 @@ VPS_FILES = [
     ('scripts/vps/mac-run.py', '/home/claude/.local/bin/mac-run', 'claude', 0o700),
     ('scripts/vps/route-bash-hook.py', '/home/claude/.claude/hooks/route-bash-to-mac.py', 'claude', 0o700),
     ('scripts/vps/mac-git.py', '/home/claude/.local/libexec/claude-mac/git', 'claude', 0o700),
+    ('scripts/vps/mac-rg.py', '/home/claude/.local/libexec/claude-mac/rg', 'claude', 0o700),
 ]
 MAC_FILES = [('scripts/mac/claude', '~/.local/bin/claude', None, 0o755)]
 MAC_LINKS = [('~/.local/bin/claude-ssh', 'claude'), ('~/.local/bin/claude-mosh', 'claude')]
@@ -212,6 +213,7 @@ def probe(expected):
                  for command in ('uname -s', 'uname -s #vps')],
         'hook_registered': registered,
         'git': run(AS_CLAUDE + ['/home/claude/.local/libexec/claude-mac/git', '--version']),
+        'rg': run(AS_CLAUDE + ['/home/claude/.local/libexec/claude-mac/rg', '--version']),
         'services': {name: run(['systemctl', 'is-active', name])[1] for name in ('tailscaled', 'ssh')},
         'mosh': run(['ss', '-Hlun', 'sport', 'ge', ':60001', 'and', 'sport', 'le', ':60004'])[1],
         'mounts': mounts,
@@ -253,6 +255,8 @@ def evaluate(report, repository, last_cli):
     rows.append(('OK' if report['hook_registered'] else 'FAIL', 'hook 注册', 'settings.json PreToolUse(Bash)'))
     code, output, error = report['git']
     rows.append(('OK' if code == 0 and output.startswith('git version') else 'FAIL', 'git 包装', output or error))
+    code, output, error = report['rg']
+    rows.append(('OK' if code == 0 and output.startswith('ripgrep') else 'FAIL', 'rg 包装', output.splitlines()[0] if output else error))
     for name, status in sorted(report['services'].items()):
         rows.append(('OK' if status == 'active' else 'FAIL', '服务 ' + name, status or '未知'))
     addresses = [line.split()[3].rsplit(':', 1)[0] for line in report['mosh'].splitlines() if len(line.split()) > 3]

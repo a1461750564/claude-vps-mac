@@ -22,7 +22,7 @@ tailscale ip -4
 
 ```bash
 apt-get update
-apt-get install --no-install-recommends python3 openssh-client git curl ca-certificates locales iproute2 sshfs fuse3 mosh
+apt-get install --no-install-recommends python3 openssh-client git ripgrep curl ca-certificates locales iproute2 sshfs fuse3 mosh
 ```
 
 Mosh 两端需要 UTF-8 locale。确认 en_US.UTF-8 已生成；若没有，在 `/etc/locale.gen` 启用该项后运行 locale-gen。系统时区按实际运维需求设置，与本链路的文件路由无关。
@@ -73,9 +73,12 @@ install -o claude -g claude -m 700 scripts/vps/claude-mac.py /home/claude/.local
 install -o claude -g claude -m 700 scripts/vps/mac-run.py /home/claude/.local/bin/mac-run
 install -o claude -g claude -m 700 scripts/vps/route-bash-hook.py /home/claude/.claude/hooks/route-bash-to-mac.py
 install -o claude -g claude -m 700 scripts/vps/mac-git.py /home/claude/.local/libexec/claude-mac/git
+install -o claude -g claude -m 700 scripts/vps/mac-rg.py /home/claude/.local/libexec/claude-mac/rg
 ```
 
 claude-mac 只在 Mac 项目会话把 `~/.local/libexec/claude-mac` 放到 PATH 最前，CLI 自身的 git 调用随之在 Mac 执行。缺少该文件时 CLI 回到 VPS git，经挂载执行，新会话首条回复前会多等 git status 的时间。
+
+同一目录的 rg 包装负责 Glob/Grep，启动器仅在 Mac 项目会话设置 `USE_BUILTIN_RIPGREP=0`。Mac 的登录环境需已有 rg，VPS 的 `/usr/bin/rg` 负责本机配置、插件等目录的搜索；保留两端正常配置和真实权限。
 
 不覆盖 `/home/claude/.local/bin/claude`：它必须继续指向官方 CLI。
 

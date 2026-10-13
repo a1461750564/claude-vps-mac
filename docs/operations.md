@@ -17,7 +17,7 @@
 
 ## 首次验收
 
-先在 Mac 仓库目录运行 `scripts/cvm doctor`。它核对两端文件与仓库一致、VPS CLI 版本、VPS → Mac 连接、hook 路由与注册、git 包装、服务、Mosh 端口和内存，并经真实入口执行一次 `claude --version`；不调用模型，不能代替下面的真实读写验收。CLI 版本与上次通过时不同时，doctor 会提示重做验收。
+先在 Mac 仓库目录运行 `scripts/cvm doctor`。它核对两端文件与仓库一致、VPS CLI 版本、VPS → Mac 连接、hook 路由与注册、git/rg 包装、服务、Mosh 端口和内存，并经真实入口执行一次 `claude --version`；不调用模型，不能代替下面的真实读写验收。CLI 版本与上次通过时不同时，doctor 会提示重做验收。
 
 使用独立测试目录，不直接以业务项目试错。以下既是首次安装验收，也是 CLI 更新后的最低回归范围：
 
@@ -26,6 +26,7 @@
 3. 在对话中调用 Bash 执行 uname -s; pwd，检查 hook 自动路由；加 #vps 对照应返回 Linux。再执行 `command -v git #vps` 应返回 `~/.local/libexec/claude-mac/git`，`git rev-parse --show-toplevel #vps` 应在约 0.5 s 内返回挂载路径。
 4. 准备一个文本夹具和独立测试，让 Claude 原生 Read、Edit、Write；Mac 本机独立读回 diff，运行测试并核对退出码和 Darwin，不修改测试断言。
 5. 如需图像、子 agent、Notebook、MCP、项目 hooks，逐项验证真实工具调用和执行主机。基本文本验收不能代表这些能力全部可用。
+   搜索路由需在独立目录实际调用 Glob 与 Grep，核对文件列表、命中文本、中文空格路径及无匹配结果；直接运行 rg 不能替代模型工具调用的验收。
 6. 在无业务影响的 sleep 测试中验证超时和停止后 Mac 子进程结束；对真实编辑中断先读回状态，再决定重试。
 7. 核对节点配置和 DNS 指纹、节点主进程与服务状态、原订阅登录是否变化。把凭据哈希记录放私有证据目录，不提交内容。
 
@@ -57,6 +58,7 @@
 - cvm 安装：每次替换前的文件按原路径存放在 VPS `/var/lib/claude-vps-mac/backups/<时间>/`、Mac `~/.local/state/claude-vps-mac/backups/<时间>/`，用 `cp -a` 复制回原位置即可撤回单个文件。撤回后 doctor 报告与仓库不同，这是预期。
 - Bash 路由：仅删除 hooks.PreToolUse 中 command 为 route-bash-to-mac.py 的条目，保留其他 hook；同步更新工作流提示，随后新开会话。此时 Bash 回到 VPS，不能继续把构建命令当作在 Mac 执行。
 - Git 路由：删除 `~/.local/libexec/claude-mac/git`，新会话的 CLI 回到 VPS git（经挂载，较慢）；不需要改 settings 或启动器。
+- 搜索路由：恢复备份中的 claude-mac（撤回 `USE_BUILTIN_RIPGREP=0`），新开会话恢复内置搜索；只删除 rg 包装会在 PATH 上缺少 rg 时导致工具报错。
 - Mosh：先使用 claude-ssh；需要撤除时仅删除 Mosh 专用规则，保留 Tailscale 和既有节点规则。
 - Mac 启动器：恢复自己备份的入口；保留已存在的官方 CLI，核对 PATH。
 - CLI 登录：不执行 logout，不从历史备份恢复过期令牌。保留普通用户的现有登录与凭据权限。

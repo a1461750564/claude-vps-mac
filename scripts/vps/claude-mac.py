@@ -125,16 +125,18 @@ def mount_project(project, session):
 
 
 def session_env(environ, wrappers, project=None, mount=None):
-    """Project variables and the git wrapper exist only in Mac project sessions."""
+    """Project variables and tool wrappers exist only in Mac project sessions."""
     env = dict(environ)
     path = [entry for entry in env.get('PATH', '').split(':') if entry and entry != wrappers]
     if project is None:
         env.pop('MAC_PROJECT_DIR', None)
         env.pop('MAC_PROJECT_MOUNT', None)
+        env.pop('USE_BUILTIN_RIPGREP', None)
     else:
         env['MAC_PROJECT_DIR'] = project
         env['MAC_PROJECT_MOUNT'] = mount
-        # The CLI resolves git through PATH; mac-git runs repository calls on the Mac.
+        env['USE_BUILTIN_RIPGREP'] = '0'
+        # Native git and Glob/Grep calls resolve the Mac wrappers through PATH.
         path.insert(0, wrappers)
     env['PATH'] = ':'.join(path)
     return env
