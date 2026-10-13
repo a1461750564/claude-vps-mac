@@ -1,0 +1,6 @@
+{
+  "transport": "tailscale",
+  "user": "__MAC_USERNAME__",
+  "home": "/Users/__MAC_USERNAME__",
+  "tailscale_ip": "__MAC_TAILSCALE_IPV4__"
+}

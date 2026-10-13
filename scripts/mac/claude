@@ -1,0 +1,72 @@
+#!/usr/bin/python3
+"""Mac terminal -> VPS Claude; source and test execution stay on the Mac."""
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+
+
+def load_config():
+    path = Path(os.environ.get('CLAUDE_MAC_CONFIG', '~/.config/claude-mac/launcher.json')).expanduser()
+    try:
+        config = json.loads(path.read_text())
+        alias = config['ssh_alias']
+        address = ipaddress.IPv4Address(config['tailscale_host'])
+        host_key = config['host_key_alias']
+        if not isinstance(alias, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.-]*', alias):
+            raise ValueError('Invalid SSH alias')
+        if address not in ipaddress.ip_network('100.64.0.0/10'):
+            raise ValueError('Expected a Tailscale IPv4 address')
+        if not isinstance(host_key, str) or not re.fullmatch(r'[A-Za-z0-9_][A-Za-z0-9_.:-]*', host_key):
+            raise ValueError('Invalid host-key alias')
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise SystemExit('Claude Mac launcher configuration error at %s: %s' % (path, error))
+    return alias, str(address), host_key
+
+
+def main():
+    if sys.platform != 'darwin':
+        raise SystemExit('Run this launcher in the Mac project terminal.')
+    alias, address, host_key = load_config()
+    name, args = Path(sys.argv[0]).name, sys.argv[1:]
+    remote = ['/root/.local/bin/claude-mac', '--mac-project', os.getcwd(), '--', *args]
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    mosh = shutil.which('mosh')
+    use_mosh = (name != 'claude-ssh' and interactive and mosh is not None
+                and not (args and re.fullmatch('[a-z][a-z-]*', args[0]))
+                and not {'-h', '--help', '-v', '--version', '-p', '--print'} & set(args))
+    tailnet = ['-o', 'HostName=' + address, '-o', 'HostKeyAlias=' + host_key]
+    probe = 'ss -Hlun sport ge :60001 and sport le :60004 | wc -l' if use_mosh else 'true'
+    ready = subprocess.run(['/usr/bin/ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=6',
+                            '-o', 'ControlPersist=1h', *tailnet, alias, probe],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    if ready.returncode:
+        sys.stderr.write('Tailscale 对话入口不可达，尝试公网 SSH；Mac 操作仍需要 Tailscale。\n')
+        tailnet, use_mosh = [], False
+    elif use_mosh:
+        try:
+            busy = int(ready.stdout.strip())
+        except ValueError:
+            busy = 4
+        if busy >= 4:
+            sys.stderr.write('Mosh 端口池已满，本次使用 SSH。\n')
+            use_mosh = False
+    if use_mosh:
+        env = os.environ.copy()
+        if not any('UTF-8' in env.get(key, '').upper() for key in ('LC_ALL', 'LC_CTYPE', 'LANG')):
+            env['LC_ALL'] = 'en_US.UTF-8'
+        ssh = shlex.join(['/usr/bin/ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=12', *tailnet])
+        os.execve(mosh, [mosh, '--ssh=' + ssh, '--experimental-remote-ip=remote', '--port=60001:60004',
+                        '--server=env MOSH_SERVER_NETWORK_TMOUT=14400 mosh-server', '--', alias, *remote], env)
+    tty = '-tt' if interactive else '-T'
+    os.execv('/usr/bin/ssh', ['/usr/bin/ssh', tty, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=12',
+                            *tailnet, alias, shlex.join(remote)])
+
+
+if __name__ == '__main__':
+    main()
