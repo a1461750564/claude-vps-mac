@@ -29,5 +29,24 @@ class CacheOutdated(unittest.TestCase):
         self.assertTrue(claude_mac.cache_outdated([b'dir_cache=no', b'attr_timeout=0']))
 
 
+class SessionEnv(unittest.TestCase):
+    wrappers = '/home/claude/.local/libexec/claude-mac'
+    base = {'PATH': '/home/claude/.local/bin:/usr/bin', 'HOME': '/home/claude'}
+
+    def test_mac_project_sessions_get_project_variables_and_the_git_wrapper(self):
+        env = claude_mac.session_env(self.base, self.wrappers, '/Volumes/D/p', '/m/abc')
+        self.assertEqual((env['MAC_PROJECT_DIR'], env['MAC_PROJECT_MOUNT']), ('/Volumes/D/p', '/m/abc'))
+        self.assertEqual(env['PATH'], self.wrappers + ':/home/claude/.local/bin:/usr/bin')
+        self.assertEqual(env['HOME'], '/home/claude')
+
+    def test_other_sessions_drop_both_even_when_inherited(self):
+        inherited = dict(self.base, MAC_PROJECT_DIR='/x', MAC_PROJECT_MOUNT='/y',
+                         PATH=self.wrappers + ':' + self.base['PATH'])
+        env = claude_mac.session_env(inherited, self.wrappers)
+        self.assertNotIn('MAC_PROJECT_DIR', env)
+        self.assertNotIn('MAC_PROJECT_MOUNT', env)
+        self.assertEqual(env['PATH'], self.base['PATH'])
+
+
 if __name__ == '__main__':
     unittest.main()

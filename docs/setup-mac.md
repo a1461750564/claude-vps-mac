@@ -53,15 +53,14 @@ chmod 600 ~/.config/claude-mac/launcher.json
 | tailscale_host | VPS 的 Tailscale IPv4，不是公网 IP |
 | host_key_alias | 与已验证 VPS 主机密钥条目一致的主机名/IP |
 
-确认配置后：
+确认配置后，用 cvm 安装启动器和 claude-ssh、claude-mosh 两个链接，已有文件先备份到 `~/.local/state/claude-vps-mac/backups/`：
 
 ```bash
-install -m 755 scripts/mac/claude ~/.local/bin/claude
-ln -s claude ~/.local/bin/claude-ssh
-ln -s claude ~/.local/bin/claude-mosh
+scripts/cvm install mac --dry-run
+scripts/cvm install mac
 ```
 
-仅在链接不存在时运行 ln；已有链接先核对。确保 `~/.local/bin` 在本机 PATH 中；需要时把 `export PATH="$HOME/.local/bin:$PATH"` 合并到现有 shell 配置，不整份覆盖。
+已有的 `~/.local/bin/claude` 显示为 unmanaged 时，先确认它是旧的远端启动器而不是原生 CLI，再加 `--adopt`。确保 `~/.local/bin` 在本机 PATH 中；需要时把 `export PATH="$HOME/.local/bin:$PATH"` 合并到现有 shell 配置，不整份覆盖。
 
 可用 `CLAUDE_MAC_CONFIG` 指向另一份私有 JSON。字段缺失或仍是占位符时，启动器先报错，不发起连接。
 

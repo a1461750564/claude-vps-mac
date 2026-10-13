@@ -2,6 +2,22 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布] — 0.3.0
+
+### 新增
+
+- `scripts/vps/mac-git.py`（安装为 `~/.local/libexec/claude-mac/git`）：Mac 项目会话中，CLI 自身的 git 调用（会话上下文的 status/log、diff、worktree 等）在 Mac 执行，不再经 SSHFS 逐个文件读取。挂载外的目录、参数或环境变量中的 VPS 路径、`--version`/`help` 仍用 VPS git；`rev-parse`、`worktree` 输出里的 Mac 路径映射回挂载路径；Mac 端设置 `GIT_CEILING_DIRECTORIES`，仓库查找止于项目目录，与挂载上的结果一致。
+- `scripts/cvm`，在 Mac 仓库目录运行。`install vps|mac` 从仓库安装两端文件（VPS 经启动器的管理入口以 root 写入）：支持 `--dry-run`，替换前备份，记录所装提交；不是 cvm 装的或装后被改过的文件需 `--adopt` 才替换；源文件有未提交修改时拒绝安装。`doctor` 核对两端文件与仓库一致、CLI 版本变化、VPS → Mac、hook 路由与注册、git 包装、服务、Mosh 端口与内存，并经真实入口运行 `claude --version`。
+- 35 项测试：git 路由判断、环境变量转发、参数经真实 bash 原样到达 git、真实 git 下的仓库查找边界、输出路径映射、会话环境与脚本可执行位；cvm 的状态判定、备份与 `--adopt`、以 `python3 -c` 远端运行和 doctor 判定。
+
+### 变更
+
+- claude-mac 只在 Mac 项目会话把 `~/.local/libexec/claude-mac` 放到 PATH 最前；非项目会话移除该目录和项目变量。
+
+### 测量
+
+- 30 个文件的本仓库：VPS git 经挂载执行 `status` 37–42 s、`log -n 5` 13 s。CLI 要等 git status 返回才发出第一个 API 请求，启动后 42.4 s 才发出；路由后每次 git 约 0.5 s，第一个请求在 5.6–7.2 s 发出。方法见[部署经验](docs/deployment-experience.md#cli-内部的-git)。
+
 ## [未发布] — 0.2.0
 
 ### 新增

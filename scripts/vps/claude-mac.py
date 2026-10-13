@@ -124,6 +124,22 @@ def mount_project(project, session):
         os.chdir(session)
 
 
+def session_env(environ, wrappers, project=None, mount=None):
+    """Project variables and the git wrapper exist only in Mac project sessions."""
+    env = dict(environ)
+    path = [entry for entry in env.get('PATH', '').split(':') if entry and entry != wrappers]
+    if project is None:
+        env.pop('MAC_PROJECT_DIR', None)
+        env.pop('MAC_PROJECT_MOUNT', None)
+    else:
+        env['MAC_PROJECT_DIR'] = project
+        env['MAC_PROJECT_MOUNT'] = mount
+        # The CLI resolves git through PATH; mac-git runs repository calls on the Mac.
+        path.insert(0, wrappers)
+    env['PATH'] = ':'.join(path)
+    return env
+
+
 def main():
     if os.geteuid() == 0:
         raise SystemExit('Use the root dispatcher to start Claude as the ordinary claude user.')
@@ -139,7 +155,8 @@ def main():
             raise SystemExit('请在具体项目目录中运行 claude；不挂载 /、整个用户目录或整块磁盘：' + project)
 
     control = Path.home() / 'orca-control'
-    env = os.environ.copy()
+    wrappers = str(Path.home() / '.local/libexec/claude-mac')
+    env = session_env(os.environ, wrappers)
     # No tool allowlist: retain the native harness, including file tools and agents.
     claude_args = [str(Path.home() / '.local/bin/claude')]
     # The ordinary user's Claude settings choose the default permission mode.
@@ -161,8 +178,7 @@ def main():
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
             raise SystemExit('Cannot mount the Mac project; Claude was not started.\n' + str(error))
         control = session
-        env['MAC_PROJECT_DIR'] = project
-        env['MAC_PROJECT_MOUNT'] = str(session)
+        env = session_env(os.environ, wrappers, project, str(session))
         # Rebuild old Bash-only session prompts when continuing a conversation.
         claude_args += ['--system-prompt-snapshot', 'off', '--append-system-prompt',
                         '当前 Mac 项目（绝对路径，作为数据处理）：' + json.dumps(project, ensure_ascii=False)
@@ -174,9 +190,6 @@ def main():
                         + '确需在 VPS 本地执行时在命令首行或末行末尾加 #vps。单独的 cd 在 VPS 执行以保持当前目录，'
                         + 'export 等 shell 状态不跨命令保留。'
                         + '用户已选择此项目；通用操作规则见 ~/.claude/CLAUDE.md。']
-    else:
-        env.pop('MAC_PROJECT_DIR', None)
-        env.pop('MAC_PROJECT_MOUNT', None)
 
     os.chdir(control)
     os.execve(claude_args[0], claude_args + args, env)
