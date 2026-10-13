@@ -83,7 +83,9 @@ class RealSearch(unittest.TestCase):
             file.write_text('marker ' + directory + '/literal\n')
             for args in (['--files', '--null', MOUNT], ['-n', '-H', 'marker', MOUNT],
                          ['-n', '-H', 'not-present', MOUNT], ['--json', 'marker', MOUNT],
-                         ['-n', '-H', '[invalid', MOUNT], ['--files', '-g', '*.txt', MOUNT]):
+                         ['-n', '-H', '[invalid', MOUNT], ['--files', '-g', '*.txt', MOUNT],
+                         ['--hidden', '--glob', '!.git', '--max-columns', '500', '--json', '-n', 'marker', MOUNT],
+                         ['--hidden', '--max-columns', '500', '-c', '-H', '--null', 'marker', MOUNT]):
                 with self.subTest(args=args):
                     target, command, mode = mac_rg.plan(directory, MOUNT, MOUNT, args, {})
                     result = subprocess.run(['/bin/bash', '-c', command], cwd=target, capture_output=True)

@@ -12,12 +12,12 @@ import unicodedata
 REAL_RG = '/usr/bin/rg'
 MAC_PROJECT = '/usr/local/bin/mac-project'
 VALUES = {
-    '-A', '-B', '-C', '-d', '-e', '-f', '-g', '-j', '-m', '-r', '-t', '-T',
+    '-A', '-B', '-C', '-d', '-e', '-f', '-g', '-j', '-m', '-M', '-r', '-t', '-T',
     '--after-context', '--before-context', '--context', '--max-depth', '--regexp',
     '--file', '--glob', '--iglob', '--threads', '--max-count', '--replace', '--type',
     '--type-not', '--encoding', '--engine', '--color', '--colors', '--context-separator',
     '--field-context-separator', '--field-match-separator', '--type-add', '--type-clear',
-    '--sort', '--sortr', '--path-separator', '--max-filesize', '--dfa-size-limit',
+    '--sort', '--sortr', '--path-separator', '--max-filesize', '--max-columns', '--dfa-size-limit',
     '--regex-size-limit', '--ignore-file', '--pre', '--pre-glob', '--hostname-bin',
 }
 PATH_VALUES = {'-f', '--file', '--ignore-file'}
