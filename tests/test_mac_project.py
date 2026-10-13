@@ -70,8 +70,8 @@ class Guard(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
 
-    def guard(self, script, **kwargs):
-        return [sys.executable, '-c', mac_project.GUARD, self.directory.name, script]
+    def guard(self, script, prefix=''):
+        return [sys.executable, '-c', prefix + mac_project.GUARD, self.directory.name, script]
 
     def wait_gone(self, pid):
         deadline = time.monotonic() + 6
@@ -94,6 +94,38 @@ class Guard(unittest.TestCase):
                                 capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0)
         self.wait_gone(int(result.stdout))
+
+    def test_transient_group_probe_permission_error_is_retried(self):
+        prefix = r'''
+import errno, os, sys
+real_killpg = os.killpg
+denied_probe = False
+def killpg(pgid, sig):
+    global denied_probe
+    if sig == 0 and not denied_probe:
+        denied_probe = True
+        sys.stderr.write('injected transient EPERM\n')
+        raise PermissionError(errno.EPERM, 'transient zombie-only group')
+    return real_killpg(pgid, sig)
+os.killpg = killpg
+'''
+        result = subprocess.run(self.guard('sleep 30 >/dev/null 2>&1 & echo $!', prefix),
+                                capture_output=True, text=True, timeout=20)
+        self.wait_gone(int(result.stdout))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, 'injected transient EPERM\n')
+
+    def test_persistent_group_permission_error_is_reported(self):
+        prefix = r'''
+import errno, os
+def killpg(pgid, sig):
+    raise PermissionError(errno.EPERM, 'persistent group permission failure')
+os.killpg = killpg
+'''
+        result = subprocess.run(self.guard('true', prefix), capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('PermissionError', result.stderr)
+        self.assertIn('persistent group permission failure', result.stderr)
 
     def test_closed_channel_ends_the_whole_group(self):
         process = subprocess.Popen(self.guard('sleep 30 & echo $!; wait'), stdout=subprocess.PIPE,
