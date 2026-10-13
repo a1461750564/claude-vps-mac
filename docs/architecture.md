@@ -21,7 +21,7 @@ Tailscale 不设出口节点、不接受子网路由、不接管 DNS。Mosh 仅�
 3. root 分发器只通过 runuser 切换到普通用户 claude，不执行模型或项目工具。
 4. VPS 启动器核对 Mac 返回 Darwin、项目可访问；拒绝用户目录和整盘根目录。
 5. 按 Mac 项目路径 SHA256 选择稳定挂载点，普通卸载其他空闲挂载，保留忙挂载。
-6. 挂载或复用 SSHFS，设置 `MAC_PROJECT_DIR`、`MAC_PROJECT_MOUNT`，启动官方 CLI。
+6. 挂载或复用 SSHFS，设置 `MAC_PROJECT_DIR`、`MAC_PROJECT_MOUNT`，把 git 包装目录放到 PATH 最前，启动官方 CLI。
 
 状态目录仍叫 `~/claude-vps-mac`，只是继承原项目的路径身份，不依赖 终端工具。改变挂载点会改变 Claude 的会话索引，不应随意改名。
 
@@ -31,10 +31,11 @@ Tailscale 不设出口节点、不接受子网路由、不接管 DNS。Mosh 仅�
 - Bash 的 PreToolUse hook 保留 timeout、run_in_background 等输入字段，将命令包装为 mac-run。
 - mac-run 根据 VPS cwd 映射 Mac cwd，并将命令内的挂载路径替换成 Mac 路径；在挂载外时拒绝执行。
 - mac-project 通过固定 SSH 别名调用 Mac 系统 Python 守护，在 `/bin/bash` 独立进程组中执行命令，转发 stdin/stdout/stderr 和退出码。
+- CLI 自身的 git 调用（会话开头的 status/log、diff、worktree）经 PATH 上的 mac-git 包装，用同一通道在 Mac 执行。挂载外的目录、参数或环境变量含 VPS 路径、`--version`/`help` 时仍用 VPS git。`rev-parse`、`worktree` 输出中的 Mac 项目路径换回挂载路径；Mac 上设置 `GIT_CEILING_DIRECTORIES`，仓库查找止于项目目录，与挂载上的结果一致。
 - 命令结束、超时或通道关闭时清理整个进程组；持续服务需让主进程保持前台，并使用工具的 run_in_background。
 - 命令首行或末行末尾的 `#vps`、已有 mac-project 调用、单独 cd 不走 Mac 包装。单独 cd 用来保存原生 Bash 的 cwd；export 不跨调用保存。
 
-这些路由是工作流，不是安全沙箱。挂载路径替换是文本替换；包含该路径的数据文本也会改变。项目 hooks、MCP、插件、语言服务器仍按它们自己的执行主机运行，不能从“工具全保留”推导为“全部在 Mac 执行”。
+这些路由是工作流，不是安全沙箱。挂载路径替换是文本替换；包含该路径的数据文本也会改变。内置 Glob/Grep 仍由 VPS 上的 ripgrep 经 SSHFS 扫描。项目 hooks、MCP、插件、语言服务器仍按它们自己的执行主机运行，不能从“工具全保留”推导为“全部在 Mac 执行”。
 
 ## 一致性和权限
 
