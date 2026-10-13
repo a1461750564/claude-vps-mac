@@ -8,7 +8,7 @@ from helpers import ROOT
 
 SCRIPTS = ['scripts/mac/claude', 'scripts/vps/claude-mac.py', 'scripts/vps/mac-project.py',
            'scripts/vps/mac-run.py', 'scripts/vps/route-bash-hook.py', 'scripts/vps/mac-git.py',
-           'scripts/cvm']
+           'scripts/cvm', 'scripts/vps/mac-rg.py']
 SECRETS = re.compile('|'.join([
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----', r'\bghp_[A-Za-z0-9]{30,}', r'\bgithub_pat_[A-Za-z0-9_]{30,}',
     r'\bsk-ant-[A-Za-z0-9_-]{20,}', r'\bxox[abp]-[A-Za-z0-9-]{10,}', r'vless://[0-9a-fA-F-]{8,}@',

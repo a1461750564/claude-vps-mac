@@ -38,13 +38,15 @@ class SessionEnv(unittest.TestCase):
         self.assertEqual((env['MAC_PROJECT_DIR'], env['MAC_PROJECT_MOUNT']), ('/Volumes/ExampleDisk/p', '/m/abc'))
         self.assertEqual(env['PATH'], self.wrappers + ':/home/claude/.local/bin:/usr/bin')
         self.assertEqual(env['HOME'], '/home/claude')
+        self.assertEqual(env['USE_BUILTIN_RIPGREP'], '0')
 
     def test_other_sessions_drop_both_even_when_inherited(self):
-        inherited = dict(self.base, MAC_PROJECT_DIR='/x', MAC_PROJECT_MOUNT='/y',
+        inherited = dict(self.base, MAC_PROJECT_DIR='/x', MAC_PROJECT_MOUNT='/y', USE_BUILTIN_RIPGREP='0',
                          PATH=self.wrappers + ':' + self.base['PATH'])
         env = claude_mac.session_env(inherited, self.wrappers)
         self.assertNotIn('MAC_PROJECT_DIR', env)
         self.assertNotIn('MAC_PROJECT_MOUNT', env)
+        self.assertNotIn('USE_BUILTIN_RIPGREP', env)
         self.assertEqual(env['PATH'], self.base['PATH'])
 
 

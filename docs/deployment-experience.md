@@ -46,6 +46,12 @@ mac-git 让这些调用经 mac-project 在 Mac 执行，每次约 0.5 s；同一
 
 取舍：只有 `rev-parse`、`worktree` 的输出做路径映射，其余输出原样传回，避免改动文件内容；Mac 上 git 版本与配置以 Mac 为准，VPS 的凭据程序、SSH 命令和跟踪变量不转发。CLI 启动时最多约 5 个 git 并行，与 SSHFS、Bash 共用一条 SSH 主连接；macOS sshd 默认每条连接 10 个会话，多个会话同时启动可能超出，此时该次 git 失败，CLI 缺少 git 上下文但仍可使用。
 
+## CLI 原生搜索
+
+`USE_BUILTIN_RIPGREP=0` 是官方提供的系统 rg 入口；在 Mac 项目会话把 mac-rg 放到 PATH 最前，使 Glob/Grep 的 rg 调用经 mac-project 执行。正则、glob 和命中文本保持原样，只转换文件参数与结果路径；VPS 插件、配置等目录继续用 VPS rg。[官方环境变量说明](https://code.claude.com/docs/en/env-vars)
+
+2026-10-13 在本仓库按相同参数交替测量 3 次：16 个 Python 文件的枚举由中位 73.929 s 降到 0.795 s，147 行匹配的文本搜索由 13.730 s 降到 0.747 s。文件集合、命中文本及退出码一致。它测量的是 rg 进程；模型响应、Glob 的后续结果处理和大型项目需另外验收，当前真实模型工具调用受 Pro 会话额度限制。Read/Edit 仍采用原有 SSHFS，不增加内容缓存。
+
 ## 为什么保留原生 CLI 和 SSHFS
 
 曾做过插件拦截 Read/Edit/Write/Bash 的隔离原型，能在 Mac 夹具上执行，但需维护 CLI 版本相关的工具输入输出、图像与会话语义，未替换生产路径。本项目不附带它，不把有限原型验收写成完整替代 harness。

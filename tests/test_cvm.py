@@ -144,6 +144,7 @@ def healthy(repository):
         'manifest': {'commit': 'v0.3.0'}, 'cli': [0, '2.1.296 (Claude Code)', ''],
         'mac': [0, 'host: m\nsystem: Darwin', ''], 'hook': [[0, routed, ''], [0, '', '']],
         'hook_registered': True, 'git': [0, 'git version 2.39.5', ''],
+        'rg': [0, 'ripgrep 13.0.0', ''],
         'services': {'tailscaled': 'active', 'ssh': 'active'},
         'mosh': 'UNCONN 0 0 100.101.1.2:60001 0.0.0.0:*', 'mounts': 1,
         'memory_mib': {'MemAvailable': 1400, 'SwapFree': 2000},
