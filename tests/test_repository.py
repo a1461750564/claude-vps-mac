@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import subprocess
 import unittest
@@ -6,7 +7,8 @@ import unittest
 from helpers import ROOT
 
 SCRIPTS = ['scripts/mac/claude', 'scripts/vps/claude-mac.py', 'scripts/vps/mac-project.py',
-           'scripts/vps/mac-run.py', 'scripts/vps/route-bash-hook.py']
+           'scripts/vps/mac-run.py', 'scripts/vps/route-bash-hook.py', 'scripts/vps/mac-git.py',
+           'scripts/cvm', 'scripts/vps/mac-rg.py']
 SECRETS = re.compile('|'.join([
     r'-----BEGIN [A-Z ]*PRIVATE KEY-----', r'\bghp_[A-Za-z0-9]{30,}', r'\bgithub_pat_[A-Za-z0-9_]{30,}',
     r'\bsk-ant-[A-Za-z0-9_-]{20,}', r'\bxox[abp]-[A-Za-z0-9-]{10,}', r'vless://[0-9a-fA-F-]{8,}@',
@@ -24,6 +26,11 @@ class Repository(unittest.TestCase):
         for name in SCRIPTS:
             with self.subTest(script=name):
                 compile((ROOT / name).read_text(), name, 'exec')
+
+    def test_scripts_are_executable(self):
+        for name in SCRIPTS + ['scripts/vps/claude-mac-root.sh']:
+            with self.subTest(script=name):
+                self.assertTrue(os.access(ROOT / name, os.X_OK))
 
     def test_root_dispatcher_shell_syntax(self):
         subprocess.run(['bash', '-n', str(ROOT / 'scripts/vps/claude-mac-root.sh')], check=True)

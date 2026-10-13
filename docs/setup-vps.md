@@ -22,7 +22,7 @@ tailscale ip -4
 
 ```bash
 apt-get update
-apt-get install --no-install-recommends python3 openssh-client git curl ca-certificates locales iproute2 sshfs fuse3 mosh
+apt-get install --no-install-recommends python3 openssh-client git ripgrep curl ca-certificates locales iproute2 sshfs fuse3 mosh
 ```
 
 Mosh 两端需要 UTF-8 locale。确认 en_US.UTF-8 已生成；若没有，在 `/etc/locale.gen` 启用该项后运行 locale-gen。系统时区按实际运维需求设置，与本链路的文件路由无关。
@@ -51,18 +51,34 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 ## 3. 安装部署源
 
-把本仓库放在 VPS 的 `/opt/claude-vps-mac`，以下仅安装本链路的文件。先为目标文件留备份；已有部署不要直接覆盖未经核对的文件。
+推荐在 Mac 的本仓库目录用 `scripts/cvm` 安装。它经启动器 launcher.json 指定的管理入口以 root 写入下列文件，替换前备份到 VPS 的 `/var/lib/claude-vps-mac/backups/`，并在同目录的 `manifest.json` 记录所装的提交。需要先完成 [Mac 配置](setup-mac.md) 第 3、4 节的管理入口和 launcher.json。
+
+```bash
+scripts/cvm install vps --dry-run
+scripts/cvm install vps
+```
+
+dry run 逐个列出状态：new、same、update，以及 modified（cvm 安装后被改过）和 unmanaged（不是 cvm 装的，例如已有部署）。后两种核对后加 `--adopt` 才会替换。源文件有未提交的修改时 cvm 拒绝安装，线上因此总能对应到一个提交。
+
+不使用 cvm 时，把本仓库放在 VPS 的 `/opt/claude-vps-mac` 手动安装。先为目标文件留备份；已有部署不要直接覆盖未经核对的文件。
 
 ```bash
 cd /opt/claude-vps-mac
 install -d -m 700 /root/.local/bin
-install -d -o claude -g claude -m 700 /home/claude/.local/bin /home/claude/.claude/hooks /home/claude/claude-vps-mac
+install -d -o claude -g claude -m 700 /home/claude/.local/bin /home/claude/.claude/hooks /home/claude/claude-vps-mac \
+    /home/claude/.local/libexec /home/claude/.local/libexec/claude-mac
 install -m 755 scripts/vps/claude-mac-root.sh /root/.local/bin/claude-mac
 install -m 755 scripts/vps/mac-project.py /usr/local/bin/mac-project
 install -o claude -g claude -m 700 scripts/vps/claude-mac.py /home/claude/.local/bin/claude-mac
 install -o claude -g claude -m 700 scripts/vps/mac-run.py /home/claude/.local/bin/mac-run
 install -o claude -g claude -m 700 scripts/vps/route-bash-hook.py /home/claude/.claude/hooks/route-bash-to-mac.py
+install -o claude -g claude -m 700 scripts/vps/mac-git.py /home/claude/.local/libexec/claude-mac/git
+install -o claude -g claude -m 700 scripts/vps/mac-rg.py /home/claude/.local/libexec/claude-mac/rg
 ```
+
+claude-mac 只在 Mac 项目会话把 `~/.local/libexec/claude-mac` 放到 PATH 最前，CLI 自身的 git 调用随之在 Mac 执行。缺少该文件时 CLI 回到 VPS git，经挂载执行，新会话首条回复前会多等 git status 的时间。
+
+同一目录的 rg 包装负责 Glob/Grep，启动器仅在 Mac 项目会话设置 `USE_BUILTIN_RIPGREP=0`。Mac 的登录环境需已有 rg，VPS 的 `/usr/bin/rg` 负责本机配置、插件等目录的搜索；保留两端正常配置和真实权限。
 
 不覆盖 `/home/claude/.local/bin/claude`：它必须继续指向官方 CLI。
 

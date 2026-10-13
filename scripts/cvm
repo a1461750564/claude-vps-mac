@@ -1,0 +1,382 @@
+#!/usr/bin/python3
+"""Install this repository's scripts and check the deployment. Run on the Mac, in the repository.
+
+  scripts/cvm install vps|mac [--dry-run] [--adopt]
+  scripts/cvm doctor
+
+The repository is the single source. VPS files are written as root through the launcher's
+own SSH entry (~/.config/claude-mac/launcher.json); Mac files are written locally. Every
+replaced file is backed up first. A file cvm did not install, or one changed since cvm
+installed it, is replaced only with --adopt, after reading the dry run.
+"""
+import base64
+import datetime
+import hashlib
+import importlib.machinery
+import importlib.util
+import ipaddress
+import json
+import os
+from pathlib import Path
+import shlex
+import shutil
+import stat
+import subprocess
+import sys
+
+# Remote copies run through `python3 -c` and have no file of their own.
+ROOT = Path(__file__).resolve().parent.parent if '__file__' in globals() else None
+VPS_STATE = '/var/lib/claude-vps-mac'
+MAC_STATE = '~/.local/state/claude-vps-mac'
+# Repository file, installed path, owner (None: the user running cvm), mode.
+VPS_FILES = [
+    ('scripts/vps/claude-mac-root.sh', '/root/.local/bin/claude-mac', 'root', 0o755),
+    ('scripts/vps/mac-project.py', '/usr/local/bin/mac-project', 'root', 0o755),
+    ('scripts/vps/claude-mac.py', '/home/claude/.local/bin/claude-mac', 'claude', 0o700),
+    ('scripts/vps/mac-run.py', '/home/claude/.local/bin/mac-run', 'claude', 0o700),
+    ('scripts/vps/route-bash-hook.py', '/home/claude/.claude/hooks/route-bash-to-mac.py', 'claude', 0o700),
+    ('scripts/vps/mac-git.py', '/home/claude/.local/libexec/claude-mac/git', 'claude', 0o700),
+    ('scripts/vps/mac-rg.py', '/home/claude/.local/libexec/claude-mac/rg', 'claude', 0o700),
+]
+MAC_FILES = [('scripts/mac/claude', '~/.local/bin/claude', None, 0o755)]
+MAC_LINKS = [('~/.local/bin/claude-ssh', 'claude'), ('~/.local/bin/claude-mosh', 'claude')]
+BLOCKING = ('modified', 'unmanaged')
+AS_CLAUDE = ['/usr/sbin/runuser', '-u', 'claude', '--', '/usr/bin/env', 'HOME=/home/claude', 'USER=claude',
+             'LOGNAME=claude', 'PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin']
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def wanted(entry):
+    """What the installed path should hold: a link target or the content digest."""
+    return 'link:' + entry['link'] if 'link' in entry else digest(base64.b64decode(entry['data']))
+
+
+def owner_ids(owner):
+    if owner is None:
+        return -1, -1
+    import pwd
+    record = pwd.getpwnam(owner)
+    return record.pw_uid, record.pw_gid
+
+
+def inspect(entry):
+    """Return (what the path holds now or None, whether owner and mode already match)."""
+    path = entry['path']
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return None, False
+    if stat.S_ISLNK(info.st_mode):
+        return 'link:' + os.readlink(path), True
+    if not stat.S_ISREG(info.st_mode):
+        return 'other', False
+    with open(path, 'rb') as handle:
+        have = digest(handle.read())
+    if 'link' in entry:
+        return have, False
+    uid = owner_ids(entry['owner'])[0]
+    return have, stat.S_IMODE(info.st_mode) == entry['mode'] and uid in (-1, info.st_uid)
+
+
+def classify(have, meta_ok, want, recorded):
+    if have is None:
+        return 'new'
+    if have == want:
+        return 'same' if meta_ok else 'update'
+    if recorded is None:
+        return 'unmanaged'
+    return 'update' if have == recorded else 'modified'
+
+
+def load_json(path):
+    try:
+        with open(path) as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        return None
+
+
+def make_parents(directory, uid, gid):
+    missing = []
+    while not os.path.lexists(directory):
+        missing.append(directory)
+        directory = os.path.dirname(directory)
+    for path in reversed(missing):
+        os.mkdir(path, 0o700)
+        if uid != -1:
+            os.chown(path, uid, gid)
+
+
+def backup(path, backups):
+    target = os.path.join(backups, path.lstrip('/'))
+    make_parents(os.path.dirname(target), -1, -1)
+    shutil.copy2(path, target, follow_symlinks=False)
+    if os.geteuid() == 0:
+        info = os.lstat(path)
+        os.lchown(target, info.st_uid, info.st_gid)
+
+
+def write(entry):
+    path = entry['path']
+    uid, gid = owner_ids(entry.get('owner'))
+    make_parents(os.path.dirname(path), uid, gid)
+    temporary = os.path.join(os.path.dirname(path), '.' + os.path.basename(path) + '.cvm-new')
+    if os.path.lexists(temporary):
+        os.unlink(temporary)
+    if 'link' in entry:
+        os.symlink(entry['link'], temporary)
+    else:
+        with os.fdopen(os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as handle:
+            handle.write(base64.b64decode(entry['data']))
+        os.chmod(temporary, entry['mode'])
+        if uid != -1:
+            os.chown(temporary, uid, gid)
+    os.replace(temporary, path)
+
+
+def apply(payload):
+    """Install payload['files'] on this machine; runs locally (Mac) or as root over SSH (VPS)."""
+    state = payload['state']
+    recorded = (load_json(os.path.join(state, 'manifest.json')) or {}).get('files', {})
+    plan = []
+    for entry in payload['files']:
+        have, meta_ok = inspect(entry)
+        status = classify(have, meta_ok, wanted(entry), recorded.get(entry['path']))
+        plan.append((entry, status))
+        print('%-10s %s' % (status, entry['path']))
+    if any(status in BLOCKING for _, status in plan) and not payload['adopt']:
+        print('未改动任何文件：modified/unmanaged 不是 cvm 上次安装的内容。核对后加 --adopt 替换，替换前会备份。')
+        return 3
+    if payload['dry_run']:
+        print('dry run：未改动任何文件。')
+        return 0
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    backups = os.path.join(state, 'backups', stamp)
+    make_parents(state, -1, -1)
+    changed = 0
+    for entry, status in plan:
+        if status == 'same':
+            continue
+        if status != 'new':
+            backup(entry['path'], backups)
+        write(entry)
+        changed += 1
+    manifest = {'commit': payload['commit'], 'installed_at': stamp,
+                'files': {entry['path']: wanted(entry) for entry, _ in plan}}
+    write({'path': os.path.join(state, 'manifest.json'), 'owner': None, 'mode': 0o600,
+           'data': base64.b64encode(json.dumps(manifest, indent=1).encode()).decode()})
+    print('已安装 %s：改动 %d 个，未变 %d 个。%s' % (payload['commit'], changed, len(plan) - changed,
+          ('备份在 ' + backups) if os.path.isdir(backups) else '没有需要备份的文件。'))
+    return 0
+
+
+def run(argv, stdin=None, cwd=None):
+    try:
+        result = subprocess.run(argv, input=stdin, cwd=cwd, capture_output=True, text=True, timeout=40)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return [127, '', str(error)]
+    return [result.returncode, result.stdout.strip(), result.stderr.strip()]
+
+
+def describe(path):
+    try:
+        info = os.lstat(path)
+        with open(path, 'rb') as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    import pwd
+    return {'sha': digest(data), 'mode': stat.S_IMODE(info.st_mode), 'owner': pwd.getpwuid(info.st_uid).pw_name}
+
+
+def probe(expected):
+    """Read-only VPS facts for doctor; runs as root over SSH."""
+    hook = '/home/claude/.claude/hooks/route-bash-to-mac.py'
+    session = ['MAC_PROJECT_DIR=/doctor/project', 'MAC_PROJECT_MOUNT=/doctor/mount', '/usr/bin/python3', hook]
+    settings = load_json('/home/claude/.claude/settings.json') or {}
+    registered = any(hook in item.get('command', '')
+                     for group in settings.get('hooks', {}).get('PreToolUse', []) if group.get('matcher') == 'Bash'
+                     for item in group.get('hooks', []))
+    with open('/proc/meminfo') as handle:
+        memory = {line.split(':')[0]: int(line.split()[1]) for line in handle}
+    with open('/proc/mounts') as handle:
+        mounts = sum(1 for line in handle if line.split()[2] == 'fuse.sshfs')
+    print(json.dumps({
+        'files': {path: describe(path) for path in expected},
+        'manifest': load_json(os.path.join(VPS_STATE, 'manifest.json')),
+        'cli': run(AS_CLAUDE + ['/home/claude/.local/bin/claude', '--version']),
+        'mac': run(AS_CLAUDE + ['/usr/local/bin/mac-project', 'check']),
+        'hook': [run(AS_CLAUDE + session, json.dumps({'tool_input': {'command': command}}))
+                 for command in ('uname -s', 'uname -s #vps')],
+        'hook_registered': registered,
+        'git': run(AS_CLAUDE + ['/home/claude/.local/libexec/claude-mac/git', '--version']),
+        'rg': run(AS_CLAUDE + ['/home/claude/.local/libexec/claude-mac/rg', '--version']),
+        'services': {name: run(['systemctl', 'is-active', name])[1] for name in ('tailscaled', 'ssh')},
+        'mosh': run(['ss', '-Hlun', 'sport', 'ge', ':60001', 'and', 'sport', 'le', ':60004'])[1],
+        'mounts': mounts,
+        'memory_mib': {key: memory.get(key, 0) // 1024 for key in ('MemAvailable', 'SwapFree')},
+    }))
+    return 0
+
+
+def evaluate(report, repository, last_cli):
+    """Turn a probe report into (level, check, detail) rows; repository maps path -> (sha, owner, mode)."""
+    rows = []
+    for path, (sha, owner, mode) in repository.items():
+        found = report['files'].get(path)
+        if found is None:
+            rows.append(('FAIL', path, '缺失；运行 cvm install vps'))
+        elif found['sha'] != sha:
+            rows.append(('FAIL', path, '与仓库不同；运行 cvm install vps --dry-run 查看'))
+        elif (found['owner'], found['mode']) != (owner, mode):
+            rows.append(('WARN', path, '内容一致，属主或权限为 %s %o' % (found['owner'], found['mode'])))
+        else:
+            rows.append(('OK', path, '与仓库一致'))
+    manifest = report.get('manifest') or {}
+    rows.append(('OK' if manifest else 'WARN', 'VPS 安装记录', manifest.get('commit', '尚未用 cvm 安装')))
+    code, version, error = report['cli']
+    rows.append(('OK' if code == 0 else 'FAIL', 'VPS CLI', version or error))
+    if code == 0 and last_cli and version != last_cli:
+        rows.append(('WARN', 'CLI 版本变化', '%s → %s：按 docs/operations.md 重做首次验收' % (last_cli, version)))
+    code, output, error = report['mac']
+    rows.append(('OK' if code == 0 and 'system: Darwin' in output else 'FAIL', 'VPS → Mac',
+                 'mac-project check 返回 Darwin' if code == 0 else error))
+    routed, kept = report['hook']
+    try:
+        command = json.loads(routed[1])['hookSpecificOutput']['updatedInput']['command']
+        hook_ok = shlex.split(command)[0] == '/home/claude/.local/bin/mac-run' and kept[:2] == [0, '']
+    except (ValueError, KeyError, IndexError):
+        hook_ok = False
+    rows.append(('OK' if hook_ok else 'FAIL', 'Bash 路由 hook', '默认到 mac-run，#vps 留在 VPS' if hook_ok
+                 else (routed[2] or routed[1] or '输出不符合预期')))
+    rows.append(('OK' if report['hook_registered'] else 'FAIL', 'hook 注册', 'settings.json PreToolUse(Bash)'))
+    code, output, error = report['git']
+    rows.append(('OK' if code == 0 and output.startswith('git version') else 'FAIL', 'git 包装', output or error))
+    code, output, error = report['rg']
+    rows.append(('OK' if code == 0 and output.startswith('ripgrep') else 'FAIL', 'rg 包装', output.splitlines()[0] if output else error))
+    for name, status in sorted(report['services'].items()):
+        rows.append(('OK' if status == 'active' else 'FAIL', '服务 ' + name, status or '未知'))
+    addresses = [line.split()[3].rsplit(':', 1)[0] for line in report['mosh'].splitlines() if len(line.split()) > 3]
+    exposed = [address for address in addresses if not tailnet(address)]
+    rows.append(('WARN' if exposed else 'OK', 'Mosh 端口', '%d/4 占用%s' % (
+        len(addresses), '，非 tailnet 地址：' + ', '.join(exposed) if exposed else '')))
+    available = report['memory_mib']['MemAvailable']
+    rows.append(('WARN' if available < 300 else 'OK', 'VPS 内存', '可用 %d MiB，swap 空闲 %d MiB，SSHFS 挂载 %d 个' % (
+        available, report['memory_mib']['SwapFree'], report['mounts'])))
+    return rows
+
+
+def tailnet(address):
+    try:
+        return ipaddress.ip_address(address.strip('[]')) in ipaddress.ip_network('100.64.0.0/10')
+    except ValueError:
+        return False
+
+
+def launcher_config():
+    path = ROOT / 'scripts/mac/claude'
+    loader = importlib.machinery.SourceFileLoader('claude_launcher', str(path))
+    spec = importlib.util.spec_from_loader('claude_launcher', loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module.load_config()
+
+
+def payload(target, dry_run, adopt):
+    files = VPS_FILES if target == 'vps' else MAC_FILES
+    entries = [{'path': os.path.expanduser(dest), 'owner': owner, 'mode': mode,
+                'data': base64.b64encode((ROOT / source).read_bytes()).decode()}
+               for source, dest, owner, mode in files]
+    if target == 'mac':
+        entries += [{'path': os.path.expanduser(path), 'link': link} for path, link in MAC_LINKS]
+    commit = subprocess.run(['git', '-C', str(ROOT), 'describe', '--always', '--dirty'],
+                            capture_output=True, text=True).stdout.strip() or 'unknown'
+    state = VPS_STATE if target == 'vps' else os.path.expanduser(MAC_STATE)
+    return {'state': state, 'commit': commit, 'dry_run': dry_run, 'adopt': adopt, 'files': entries}
+
+
+def remote_command(action):
+    """Run this file's own code on the VPS: it has no copy of the repository."""
+    return '/usr/bin/python3 -c ' + shlex.quote((ROOT / 'scripts/cvm').read_text()) + ' ' + action
+
+
+def vps(config, action, data, capture):
+    alias, address, host_key = config
+    return subprocess.run(['/usr/bin/ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10',
+                           '-o', 'HostName=' + address, '-o', 'HostKeyAlias=' + host_key, alias,
+                           remote_command(action)],
+                          input=json.dumps(data), capture_output=capture, text=True, timeout=120)
+
+
+def install(target, dry_run, adopt):
+    config = launcher_config()  # The Mac launcher cannot run without it; the VPS entry uses it.
+    sources = ['scripts/cvm'] + [source for source, *_ in (VPS_FILES if target == 'vps' else MAC_FILES)]
+    dirty = subprocess.run(['git', '-C', str(ROOT), 'status', '--porcelain', '--', *sources],
+                           capture_output=True, text=True).stdout.strip()
+    if dirty and not dry_run:
+        raise SystemExit('以下文件有未提交的修改；先提交，线上才能对应到具体提交：\n' + dirty)
+    data = payload(target, dry_run, adopt)
+    if target == 'mac':
+        return apply(data)
+    return vps(config, 'apply', data, capture=False).returncode
+
+
+def doctor():
+    rows = []
+    try:
+        config = launcher_config()
+        rows.append(('OK', 'Mac 启动器配置', 'launcher.json 有效'))
+    except SystemExit as error:
+        print('FAIL  Mac 启动器配置  %s' % error)
+        return 1
+    for source, dest, _, _ in MAC_FILES:
+        found = describe(os.path.expanduser(dest))
+        same = found is not None and found['sha'] == digest((ROOT / source).read_bytes())
+        rows.append(('OK' if same else 'FAIL', dest, '与仓库一致' if same else '与仓库不同；运行 cvm install mac'))
+    for path, link in MAC_LINKS:
+        target = os.readlink(os.path.expanduser(path)) if os.path.islink(os.path.expanduser(path)) else None
+        rows.append(('OK' if target == link else 'WARN', path, '→ ' + str(target)))
+    rows.append(('OK' if shutil.which('mosh') else 'WARN', 'Mosh', shutil.which('mosh') or '未安装，入口使用 SSH'))
+    # Through the real entry, from a project directory (a home folder would be refused).
+    entry = run([os.path.expanduser('~/.local/bin/claude'), '--version'], cwd=str(ROOT))
+    rows.append(('OK' if entry[0] == 0 and 'Claude Code' in entry[1] else 'FAIL', 'Mac 入口 → VPS CLI',
+                 entry[1] or entry[2]))
+    repository = {dest: (digest((ROOT / source).read_bytes()), owner, mode) for source, dest, owner, mode in VPS_FILES}
+    result = vps(config, 'probe', list(repository), capture=True)
+    try:
+        report = json.loads(result.stdout)
+    except ValueError:
+        rows.append(('FAIL', 'VPS 管理入口', result.stderr.strip() or 'probe 无输出'))
+        report = None
+    state = Path(os.path.expanduser(MAC_STATE))
+    last = (load_json(state / 'doctor.json') or {}).get('cli')
+    if report is not None:
+        rows += evaluate(report, repository, last)
+    for level, name, detail in rows:
+        print('%-5s %s  %s' % (level, name, detail))
+    failed = any(level == 'FAIL' for level, _, _ in rows)
+    if not failed and report is not None:
+        state.mkdir(mode=0o700, parents=True, exist_ok=True)
+        (state / 'doctor.json').write_text(json.dumps({'cli': report['cli'][1], 'checked_at': datetime.datetime.now(
+            datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')}) + '\n')
+    return 1 if failed else 0
+
+
+def main(argv):
+    if argv[:1] == ['apply']:
+        return apply(json.load(sys.stdin))
+    if argv[:1] == ['probe']:
+        return probe(json.load(sys.stdin))
+    if argv[:1] == ['doctor'] and len(argv) == 1:
+        return doctor()
+    options = set(argv[2:])
+    if argv[:1] == ['install'] and argv[1:2] in (['vps'], ['mac']) and options <= {'--dry-run', '--adopt'}:
+        return install(argv[1], '--dry-run' in options, '--adopt' in options)
+    raise SystemExit(__doc__.split('\n\n')[1])
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

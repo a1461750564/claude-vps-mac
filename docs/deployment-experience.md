@@ -23,6 +23,8 @@
 | Read / Edit | VPS 本地磁盘约 0.02–0.03 s | SSHFS 约 3.05 s / 3.1–4.1 s；真实会话 Edit 中位约 7.5 s |
 | 超时后的进程 | 非 PTY SSH 可能留有 Mac 子进程 | 进程组守护实测清理无残留 |
 | SSHFS 挂载 | 11 个，包含过宽根目录 | 启动时回收空闲挂载，保留忙项目 |
+| CLI 内部 git status（30 文件仓库） | VPS git 经 SSHFS 37–42 s | 经 mac-git 在 Mac 执行约 0.5 s |
+| 新会话第一个 API 请求 | 启动后 42.4 s | 5.6–7.2 s，n=3 |
 
 搜索测试同时改变了执行位置和工具，体现工作流收益，不能用它计算 SSHFS 单独的性能提升倍数。Bash hook 是功能简化而不是每次执行更快；约 0.5 s 网络等待仍然存在。
 
@@ -33,6 +35,24 @@
 原部署验证同大小、同一秒外部编辑、原子替换、新建和删除后，选择保留 direct_io 与同步写入，仅缓存元数据：目录、属性与不存在项约 2 秒，已有目录项约 10 秒。更激进的内容缓存有读到旧内容的风险，不将其当作免费提速。
 
 有效的使用习惯是：大范围浏览/搜索用一次 Mac Bash，原生 Read 只读取即将编辑的文件与图像，合并同一文件的修改，机械批改用 Mac 脚本后检查 diff。不要为了减少调用数而跳过必要验证。
+
+## CLI 内部的 git
+
+Bash hook 只改写模型发起的 Bash 调用；CLI 自己的 git 调用不经过 hook，会在 VPS 的挂载目录执行。2026-10-13 在 30 个文件的本仓库实测：VPS git 经挂载执行 `status --short` 37–42 s，`log -n 5` 13 s，`rev-parse` 也要约 3 s；同样命令在 Mac 本地约 5 ms。Mac 写入的索引记录的是 Mac 的 inode 与时间戳，经 SFTP 看到的不一致，git 只能逐个文件重新读取内容。不带 `--no-optional-locks` 的 `git status` 还会把 VPS 视角的时间戳写回 Mac 的 `.git/index`。
+
+测量方法不消耗模型额度：在挂载目录用 `ANTHROPIC_BASE_URL=http://127.0.0.1:9 claude -p hi --no-session-persistence --debug-file …` 启动，PATH 最前放一个记录调用的 git，请求在本机被拒绝，也不写会话记录。CLI 2.1.296 通过 PATH 查找 git；启动约 0.6–3.8 s 时并行发起 `remote get-url`、`status`、`log`、`config user.name`，第一个 API 请求等 git status 返回后才发出，即启动后 42.4 s。
+
+mac-git 让这些调用经 mac-project 在 Mac 执行，每次约 0.5 s；同一测量下第一个请求在 5.6–7.2 s 发出，其余时间是 git 以外的启动读取。status、log、remote、rev-parse、ls-files、worktree、symbolic-ref、diff-files 共 10 组命令与 VPS git 经挂载的输出和退出码一致。
+
+取舍：只有 `rev-parse`、`worktree` 的输出做路径映射，其余输出原样传回，避免改动文件内容；Mac 上 git 版本与配置以 Mac 为准，VPS 的凭据程序、SSH 命令和跟踪变量不转发。CLI 启动时最多约 5 个 git 并行，与 SSHFS、Bash 共用一条 SSH 主连接；macOS sshd 默认每条连接 10 个会话，多个会话同时启动可能超出，此时该次 git 失败，CLI 缺少 git 上下文但仍可使用。
+
+## CLI 原生搜索
+
+`USE_BUILTIN_RIPGREP=0` 是官方提供的系统 rg 入口；在 Mac 项目会话把 mac-rg 放到 PATH 最前，使 Glob/Grep 的 rg 调用经 mac-project 执行。正则、glob 和命中文本保持原样，只转换文件参数与结果路径；VPS 插件、配置等目录继续用 VPS rg。[官方环境变量说明](https://code.claude.com/docs/en/env-vars)
+
+2026-10-13 在本仓库按相同参数交替测量 3 次：16 个 Python 文件的枚举由中位 73.929 s 降到 0.795 s，147 行匹配的文本搜索由 13.730 s 降到 0.747 s。文件集合、命中文本及退出码一致。这些数值测量的是 rg 进程，模型响应和大型项目需另外测量。
+
+仓库源和搜索路由均已切换到原部署，doctor 全部通过；真实官方 Pro 会话在候选和安装后的日常 Mac 入口实际调用 Glob/Grep，正确返回 3 个夹具文件与 2 行匹配，含中文空格路径。安装后的夹具 Glob 耗时 634 ms，不能据此承诺所有全项目 Glob 都在 1 秒内完成。CLI 2.1.296 的 Grep 会传 `--max-columns 500`，包装器需识别其值，避免把 500 当成正则而误报空结果；该行为已有回归覆盖。Read/Edit 仍采用原有 SSHFS，不增加内容缓存。
 
 ## 为什么保留原生 CLI 和 SSHFS
 
@@ -48,6 +68,6 @@
 
 2 GiB + swap 的原环境在轻负载下可用，不保证复杂项目、多个 agent、多会话都不会内存紧张。新建优先 4 GiB；不要把四个 Mosh 端口等同于四个会话的资源保证。
 
-Mosh 在真实会话有主观流畅反馈，但中文输入法、多行粘贴、长对话回滚、晚高峰 UDP、Mac 睡眠后恢复仍缺完整体验验收。大型 Git 项目启动时的挂载扫描也未覆盖。
+Mosh 在真实会话有主观流畅反馈，但中文输入法、多行粘贴、长对话回滚、晚高峰 UDP、Mac 睡眠后恢复仍缺完整体验验收。Git 启动开销只在 30 个文件的本仓库测量；路由后 git 在 Mac 本地磁盘执行，但 CLAUDE.md、设置等其余启动读取仍经 SSHFS，大型项目未测。
 
 这些缺口应在真实使用中验证，而不是再加没有测量依据的“加速参数”。
