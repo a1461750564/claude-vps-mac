@@ -59,6 +59,16 @@ claude
 | [部署经验与测量](docs/deployment-experience.md) | 原部署的瓶颈、改进、代价及待验收项 |
 | [验证记录](docs/validation.md) | 原链路实测与仓库便携版本验证的区别 |
 
+## 开发与测试
+
+测试只用 Python 标准库，不联网、不调用模型：
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Mac 端进程守护依赖 macOS kqueue，相关用例只在 macOS 上运行；CI 在 Ubuntu 与 macOS（系统 Python）各跑一遍。单元测试不能替代真实部署后的[验收](docs/operations.md)。变更见 [CHANGELOG](CHANGELOG.md)。
+
 ## 项目范围
 
 这个仓库不包含服务器凭据、订阅令牌、Reality 节点、第三方技能副本、终端工具 运行时或业务项目。现有代理节点无需改动。它也不提供注册、住宅 IP 稳定性或模型风控结果保证。
