@@ -24,18 +24,25 @@ child = subprocess.Popen(['/bin/bash', '-c', script], start_new_session=True)
 
 def end_group():
     for sig, grace in ((signal.SIGTERM, 3.0), (signal.SIGKILL, 1.0)):
-        try:
-            os.killpg(child.pid, sig)
-        except ProcessLookupError:
-            return
         deadline = time.monotonic() + grace
+        sent = False
+        permission_error = None
         while time.monotonic() < deadline:
             child.poll()
             try:
-                os.killpg(child.pid, 0)
+                os.killpg(child.pid, 0 if sent else sig)
             except ProcessLookupError:
                 return
+            except PermissionError as error:
+                # macOS can report EPERM for a zombie-only group. Reap and
+                # retry within this deadline; a persistent denial still fails.
+                permission_error = error
+            else:
+                sent = True
+                permission_error = None
             time.sleep(0.05)
+        if permission_error is not None:
+            raise permission_error
 
 def finish(code):
     end_group()

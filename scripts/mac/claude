@@ -29,6 +29,22 @@ def load_config():
     return alias, str(address), host_key
 
 
+def wants_mosh(name, args, interactive, mosh):
+    """Mosh carries only the interactive conversation. Subcommands, help, version
+    and print mode produce scrolling or piped output that Mosh cuts to one screen."""
+    return (name != 'claude-ssh' and interactive and mosh is not None
+            and not (args and re.fullmatch('[a-z][a-z-]*', args[0]))
+            and not {'-h', '--help', '-v', '--version', '-p', '--print'} & set(args))
+
+
+def mosh_ports_full(probe_output):
+    """The probe counts busy ports in the four-port pool; unreadable output counts as full."""
+    try:
+        return int(probe_output.strip()) >= 4
+    except ValueError:
+        return True
+
+
 def main():
     if sys.platform != 'darwin':
         raise SystemExit('Run this launcher in the Mac project terminal.')
@@ -37,9 +53,7 @@ def main():
     remote = ['/root/.local/bin/claude-mac', '--mac-project', os.getcwd(), '--', *args]
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
     mosh = shutil.which('mosh')
-    use_mosh = (name != 'claude-ssh' and interactive and mosh is not None
-                and not (args and re.fullmatch('[a-z][a-z-]*', args[0]))
-                and not {'-h', '--help', '-v', '--version', '-p', '--print'} & set(args))
+    use_mosh = wants_mosh(name, args, interactive, mosh)
     tailnet = ['-o', 'HostName=' + address, '-o', 'HostKeyAlias=' + host_key]
     probe = 'ss -Hlun sport ge :60001 and sport le :60004 | wc -l' if use_mosh else 'true'
     ready = subprocess.run(['/usr/bin/ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=6',
@@ -48,14 +62,9 @@ def main():
     if ready.returncode:
         sys.stderr.write('Tailscale 对话入口不可达，尝试公网 SSH；Mac 操作仍需要 Tailscale。\n')
         tailnet, use_mosh = [], False
-    elif use_mosh:
-        try:
-            busy = int(ready.stdout.strip())
-        except ValueError:
-            busy = 4
-        if busy >= 4:
-            sys.stderr.write('Mosh 端口池已满，本次使用 SSH。\n')
-            use_mosh = False
+    elif use_mosh and mosh_ports_full(ready.stdout):
+        sys.stderr.write('Mosh 端口池已满，本次使用 SSH。\n')
+        use_mosh = False
     if use_mosh:
         env = os.environ.copy()
         if not any('UTF-8' in env.get(key, '').upper() for key in ('LC_ALL', 'LC_CTYPE', 'LANG')):

@@ -15,6 +15,11 @@ CACHE_OPTIONS = (
 )
 
 
+def cache_outdated(options):
+    """True when an SSHFS option list predates the current cache policy."""
+    return b'auto_cache' in options or any(option.encode() not in options for option in CACHE_OPTIONS)
+
+
 def needs_cache_upgrade(session):
     """Inspect only our own SSHFS process for outdated cache options."""
     for process in Path('/proc').iterdir():
@@ -26,10 +31,7 @@ def needs_cache_upgrade(session):
             args = (process / 'cmdline').read_bytes().split(b'\0')
             if args[0] != b'/usr/bin/sshfs' or os.fsencode(session) not in args:
                 continue
-            options = args[args.index(b'-o') + 1].split(b',')
-            return b'auto_cache' in options or any(
-                option.encode() not in options for option in CACHE_OPTIONS
-            )
+            return cache_outdated(args[args.index(b'-o') + 1].split(b','))
         except (OSError, ValueError, IndexError):
             continue
     return False
