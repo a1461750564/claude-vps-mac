@@ -53,7 +53,7 @@ Tailscale 只连通两端私网，不设出口节点、不接管 DNS。Mosh 只�
 | 调用 | 执行位置 | 机制 | 实测 |
 | --- | --- | --- | --- |
 | Bash（默认） | Mac 的 `/bin/bash`，独立进程组 | PreToolUse hook → mac-run → mac-project | 约 0.5 s/次 |
-| Bash 首行或末行末尾带 `#vps`、单独 `cd` | VPS | hook 放行 | — |
+| Bash 首行或末行末尾带 `#vps`、单独 `cd`，或运行只在 VPS 存在的程序（mac-project、`~/.claude` 下的技能脚本、scratchpad 脚本） | VPS | hook 放行；与项目工具链混写时拒绝 | — |
 | Read / Edit / Write / NotebookEdit | VPS 进程读写 Mac 文件 | SSHFS 实时挂载，不缓存内容，同步写入 | 读写链路：Read 约 3 s，Edit 约 3–4 s；Write / NotebookEdit 未单独测量 |
 | CLI 内部 git（会话上下文、diff、worktree） | Mac | PATH 上的 mac-git | 约 0.5 s/次 |
 | Glob / Grep | Mac 上的 rg | `USE_BUILTIN_RIPGREP=0` 加 PATH 上的 mac-rg | 本仓库 rg 阶段约 0.8 s；完整工具耗时另计 |

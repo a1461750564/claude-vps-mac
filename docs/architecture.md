@@ -34,7 +34,8 @@ Tailscale 不设出口节点、不接受子网路由、不接管 DNS。Mosh 仅�
 - CLI 自身的 git 调用（会话开头的 status/log、diff、worktree）经 PATH 上的 mac-git 包装，用同一通道在 Mac 执行。挂载外的目录、参数或环境变量含 VPS 路径、`--version`/`help` 时仍用 VPS git。`rev-parse`、`worktree` 输出中的 Mac 项目路径换回挂载路径；Mac 上设置 `GIT_CEILING_DIRECTORIES`，仓库查找止于项目目录，与挂载上的结果一致。
 - Glob/Grep 使用 PATH 上的 mac-rg，在 Mac 本地运行 rg；只映射文件参数与结果中的路径，保留正则、glob、命中文本、JSON 偏移和退出码。VPS 路径、版本/帮助、主机专用处理器或非标准输出格式仍使用 `/usr/bin/rg`。已选择 Mac 路由的调用若 SSH 失败，不会在 VPS 重新搜索。两端都需要 rg；切换设置只属于 Mac 项目会话。[官方环境变量说明](https://code.claude.com/docs/en/env-vars)
 - 命令结束、超时或通道关闭时清理整个进程组；持续服务需让主进程保持前台，并使用工具的 run_in_background。
-- 命令首行或末行末尾的 `#vps`、已有 mac-project 调用、单独 cd 不走 Mac 包装。单独 cd 用来保存原生 Bash 的 cwd；export 不跨调用保存。
+- 命令首行或末行末尾的 `#vps`、单独 cd 不走 Mac 包装。单独 cd 用来保存原生 Bash 的 cwd；export 不跨调用保存。
+- hook 按 shell 词法找出各简单命令的程序（解释器取其脚本，heredoc 正文视为数据）。程序只在 VPS 存在时整条留在 VPS：mac-project、`~/.claude` 下的技能脚本、VPS 家目录或 Claude 临时目录中挂载外的文件。这类程序在 Mac 上必然找不到，路由到 Mac 只会失败。同一条命令若还含项目工具链（包管理、构建、测试或项目脚本）则拒绝并提示拆分，不在 VPS 执行项目工作；其余命令（文本处理、`python3 -c` 等）随之在 VPS 执行。无法解析的命令按原规则送往 Mac。
 
 这些路由是工作流，不是安全沙箱。Bash 命令中的挂载路径替换是文本替换，包含该路径的数据文本也会改变；rg 的命中文本不参与路径替换。项目 hooks、MCP、插件、语言服务器仍按它们自己的执行主机运行，不能从“工具全保留”推导为“全部在 Mac 执行”。
 

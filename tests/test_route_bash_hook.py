@@ -3,6 +3,7 @@ import os
 import shlex
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from helpers import ROOT, load
@@ -64,6 +65,60 @@ class Decide(unittest.TestCase):
         with self.assertRaises(TypeError):
             hook.decide({'tool_input': {'command': ['ls']}}, ENV)
 
+    def test_mac_project_anywhere_in_command_position_stays(self):
+        for command in ('for f in a b; do mac-project exec /x "cat $f" > "$f"; done',
+                        'x=$(mac-project exec /x true); echo "$x"',
+                        'mkdir -p /tmp/o && mac-project exec /x \'cat a.png\' > /tmp/o/a.png',
+                        'mac-project exec /x \'tar -cf - out\' | tar -xf - -C /tmp/o',
+                        '# fetch\nP=1 /usr/local/bin/mac-project exec /x true',
+                        'mac-project exec /x "cat s.json" > /tmp/o/s.json && python3 -I -c "print(1)"',
+                        'mac-project check; ps aux | grep -c sshfs', "mac-project exec /x 'ls' | python3 - <<EOF\nimport sys\nEOF"):
+            with self.subTest(command=command):
+                self.assertIsNone(decide(command))
+
+    def test_mac_project_as_data_still_goes_to_the_mac(self):
+        for command in ('rg -n "mac-project exec" docs', 'echo "a; mac-project b"', 'cat a | grep mac-project',
+                        'cat > notes.md <<EOF\nmac-project exec /x true\nEOF', "echo 'unbalanced",
+                        "echo 'x' > mac-project.txt"):
+            with self.subTest(command=command):
+                self.assertRouted(command)
+
+    def test_vps_only_programs_stay(self):
+        env = dict(ENV, HOME='/home/claude')
+        scratch = '/tmp/claude-%d/s/scratchpad' % os.getuid()
+        for command in ('IMPECCABLE_LAUNCHER_PROBE=1 sh "/home/claude/.claude/skills/impeccable/scripts/impeccable" context',
+                        'python3 ~/.claude/skills/check/scripts/scan.py src', 'bash $HOME/.claude/skills/x/run.sh',
+                        scratch + '/probe.sh', 'python3 -I ' + scratch + '/a.py out.json | head'):
+            with self.subTest(command=command):
+                self.assertIsNone(decide(command, env=env))
+
+    def test_project_files_and_stdin_scripts_are_not_vps_only(self):
+        env = dict(ENV, HOME='/home/claude')
+        for command in ('sh /home/claude/claude-vps-mac/projects/abc/scripts/x.sh', 'python3 - <<EOF\nprint(1)\nEOF',
+                        'node scripts/build.mjs', 'cat ~/.zshrc', '~/.local/bin/claude --version',
+                        'bash -n x.sh && $HOME/bin/tool'):
+            with self.subTest(command=command):
+                self.assertEqual(shlex.split(decide(command, env=env)['command'])[1], command)
+
+    def test_project_files_reached_through_the_state_alias_go_to_the_mac(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = os.path.realpath(temporary)
+            mount = os.path.join(home, 'legacy-state/projects/abc')
+            os.makedirs(os.path.join(mount, 'scripts'))
+            os.symlink(os.path.join(home, 'legacy-state'), os.path.join(home, 'claude-vps-mac'))
+            env = dict(ENV, HOME=home, MAC_PROJECT_MOUNT=mount)
+            aliased = 'sh ' + home + '/claude-vps-mac/projects/abc/scripts/x.sh'
+            self.assertEqual(shlex.split(decide(aliased, env=env)['command'])[1], aliased)
+            self.assertIsNone(decide('sh ' + home + '/claude-vps-mac/tools/x.sh', env=env))
+
+    def test_vps_program_mixed_with_mac_work_is_refused(self):
+        env = dict(ENV, HOME='/home/claude')
+        for command in ('pnpm test && sh ~/.claude/skills/c/s.sh', 'mac-project exec /x true; npm run build',
+                        'mac-project check; python3 scripts/report.py', 'node build.mjs | sh ~/.claude/skills/c/s.sh'):
+            with self.subTest(command=command):
+                with self.assertRaises(hook.Refused) as caught:
+                    decide(command, env=env)
+                self.assertIn('#vps', str(caught.exception))
 
 class HookProcess(unittest.TestCase):
     def run_hook(self, payload, env=ENV):
@@ -89,6 +144,12 @@ class HookProcess(unittest.TestCase):
     def test_unchanged_calls_print_nothing(self):
         self.assertEqual(self.run_hook(json.dumps({'tool_input': {'command': 'uname #vps'}})), '')
 
+    def test_refusals_explain_how_to_split(self):
+        payload = json.dumps({'tool_input': {'command': 'pnpm test && mac-project exec /x true'}})
+        specific = json.loads(self.run_hook(payload))['hookSpecificOutput']
+        self.assertEqual(specific['permissionDecision'], 'deny')
+        self.assertIn('#vps', specific['permissionDecisionReason'])
+        self.assertNotIn('hook 出错', specific['permissionDecisionReason'])
 
 if __name__ == '__main__':
     unittest.main()

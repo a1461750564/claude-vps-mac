@@ -34,7 +34,8 @@
 v0.1.0 整理时的 20 项一次性行为检查，已在 v0.2.0 固化为 `tests/` 下的单元测试，v0.3.0 共 93 项（Python 标准库，不联网、不调用模型），CI 配置覆盖 Ubuntu 与 macOS：
 
 - 启动器：交互会话使用 Mosh；help/version/print、子命令、非终端和 claude-ssh 使用 SSH；端口池满、Tailscale 预检失败、未安装 Mosh 时回退；占位、公网地址、以 `-` 开头的别名等配置先拒绝；带中文空格的项目路径与含 shell 元字符的参数经 SSH 引用后恢复原 argv。
-- Bash hook：保留 timeout/run_in_background；`#vps`、mac-project 与单独 cd 例外；异常输入返回 deny，非 Mac 会话不输出。
+- Bash hook：保留 timeout/run_in_background；`#vps`、单独 cd 与 VPS 专属程序（任意命令位置的 mac-project、`~/.claude` 技能脚本、scratchpad 脚本）例外；heredoc 正文和引号内文本不当作命令；与项目工具链混写时拒绝并提示拆分；异常输入返回 deny，非 Mac 会话不输出。
+- 2026-10-14 用原部署 1116 条历史 Bash 命令回放新旧 hook：126 条由 Mac 改为 VPS（124 条含非开头的 mac-project 调用，2 条运行 VPS 上的 CLI），旧版送到 Mac 时均因找不到程序而失败；其余判定不变，无新增拒绝。
 - mac-run：cwd 与命令内挂载路径映射，导出项目变量，挂载外与同名前缀目录拒绝执行。
 - claude-mac：过宽目录拒绝，挂载缓存参数是否过时，项目会话的 PATH 与项目变量。
 - mac-git：CLI 上下文调用路由到 Mac，子目录与 `-C` 映射；挂载外、VPS 路径、无需仓库的命令留在 VPS；环境变量的转发与丢弃；参数经真实 bash 原样到达 git；真实 git 下仓库查找止于项目目录；`rev-parse` 输出路径映射（含两种 Unicode 形式）；终端 stdin 不交给 SSH 通道。
