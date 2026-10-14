@@ -51,6 +51,20 @@
 - 多会话改同一文件：指定一个写入者，或在 Mac 使用明确分工的工作树；SSHFS 不提供冲突合并。
 - 主机密钥改变：停止，核对重装或换机事实后更新；不关闭固定校验。
 
+## 已有部署的状态目录
+
+新部署使用 `~/claude-vps-mac` 保存 Mac 登记信息和项目挂载。已有部署若使用其他名称，在 VPS 以普通 claude 用户核对原目录，再建立新名称的符号链接，之后才更新脚本：
+
+```bash
+EXISTING_STATE_DIR='/absolute/existing/state-directory'  # 替换为当前实际目录
+test -f "$EXISTING_STATE_DIR/mac-connection.json" &&
+    test ! -e "$HOME/claude-vps-mac" &&
+    test ! -L "$HOME/claude-vps-mac" &&
+    ln -s -- "$EXISTING_STATE_DIR" "$HOME/claude-vps-mac"
+```
+
+目标名称已存在时先核对，不覆盖。启动器解析符号链接后仍使用原目录作为挂载路径，原会话的 cwd 身份保持不变；mac-project 也从该链接读取原登记文件。此步骤不搬移状态、不卸载忙项目、不迁移 Claude 会话记录。建立链接属于部署配置变更，需在实际升级时执行；仅更新仓库不会改变线上路径。
+
 ## 定点回退
 
 保留原文件及修改前指纹；只撤回对应新增项，避免恢复整份旧 settings 或防火墙。
@@ -62,4 +76,4 @@
 - Mosh：先使用 claude-ssh；需要撤除时仅删除 Mosh 专用规则，保留 Tailscale 和既有节点规则。
 - Mac 启动器：恢复自己备份的入口；保留已存在的官方 CLI，核对 PATH。
 - CLI 登录：不执行 logout，不从历史备份恢复过期令牌。保留普通用户的现有登录与凭据权限。
-- 状态路径：不要直接改名 ~/claude-vps-mac/projects；改变 cwd 身份会影响会话恢复。
+- 状态路径：保留原目录和实际挂载路径，按上节建立名称链接；不要直接改名或搬移 projects，改变 cwd 身份会影响会话恢复。

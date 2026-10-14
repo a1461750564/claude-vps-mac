@@ -23,7 +23,7 @@ Tailscale 不设出口节点、不接受子网路由、不接管 DNS。Mosh 仅�
 5. 按 Mac 项目路径 SHA256 选择稳定挂载点，普通卸载其他空闲挂载，保留忙挂载。
 6. 挂载或复用 SSHFS，设置 `MAC_PROJECT_DIR`、`MAC_PROJECT_MOUNT`，把 git/rg 包装目录放到 PATH 最前，以 `USE_BUILTIN_RIPGREP=0` 启动官方 CLI。
 
-状态目录仍叫 `~/claude-vps-mac`，只是继承原项目的路径身份，不依赖 终端工具。改变挂载点会改变 Claude 的会话索引，不应随意改名。
+状态目录默认是 `~/claude-vps-mac`。启动器解析符号链接后，以实际路径确定挂载点；已有部署可将这个名称链接到原状态目录，保留会话身份。不要直接搬移正在使用的挂载目录，升级步骤见[操作手册](operations.md#已有部署的状态目录)。
 
 ## 工具如何运行
 

@@ -53,6 +53,8 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 推荐在 Mac 的本仓库目录用 `scripts/cvm` 安装。它经启动器 launcher.json 指定的管理入口以 root 写入下列文件，替换前备份到 VPS 的 `/var/lib/claude-vps-mac/backups/`，并在同目录的 `manifest.json` 记录所装的提交。需要先完成 [Mac 配置](setup-mac.md) 第 3、4 节的管理入口和 launcher.json。
 
+已有状态目录使用其他名称时，先按[状态目录升级步骤](operations.md#已有部署的状态目录)建立链接，再安装 VPS 脚本，以保留现有登记和会话路径。
+
 ```bash
 scripts/cvm install vps --dry-run
 scripts/cvm install vps
@@ -60,7 +62,7 @@ scripts/cvm install vps
 
 dry run 逐个列出状态：new、same、update，以及 modified（cvm 安装后被改过）和 unmanaged（不是 cvm 装的，例如已有部署）。后两种核对后加 `--adopt` 才会替换。源文件有未提交的修改时 cvm 拒绝安装，线上因此总能对应到一个提交。
 
-不使用 cvm 时，把本仓库放在 VPS 的 `/opt/claude-vps-mac` 手动安装。先为目标文件留备份；已有部署不要直接覆盖未经核对的文件。
+不使用 cvm 时，把本仓库放在 VPS 的 `/opt/claude-vps-mac` 手动安装。先为目标文件留备份；已有部署不要直接覆盖未经核对的文件。已有状态目录使用其他名称时，先按[状态目录升级步骤](operations.md#已有部署的状态目录)建立链接，再执行安装。
 
 ```bash
 cd /opt/claude-vps-mac

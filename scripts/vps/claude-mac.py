@@ -156,7 +156,9 @@ def main():
         if too_broad(project):
             raise SystemExit('请在具体项目目录中运行 claude；不挂载 /、整个用户目录或整块磁盘：' + project)
 
-    control = Path.home() / 'claude-vps-mac'
+    # An existing deployment can alias this name to its original state directory.
+    # Use the real path for mounts and tool routing to preserve cwd/session identity.
+    control = (Path.home() / 'claude-vps-mac').resolve()
     wrappers = str(Path.home() / '.local/libexec/claude-mac')
     env = session_env(os.environ, wrappers)
     # No tool allowlist: retain the native harness, including file tools and agents.

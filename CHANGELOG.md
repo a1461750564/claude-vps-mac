@@ -2,6 +2,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### 变更
+
+- 状态目录默认名称统一为 `~/claude-vps-mac`，解析符号链接后保留实际挂载与会话路径；已有部署需先建立指向原目录的链接再更新脚本。
+- 测试使用通用账号和磁盘目录名，文档去除无关终端品牌叙述。
+
 ## [0.3.0] — 2026-10-13
 
 ### 新增

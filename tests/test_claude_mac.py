@@ -1,6 +1,12 @@
+import hashlib
+import os
+from pathlib import Path
+import subprocess
+import tempfile
 import unittest
+from unittest import mock
 
-from helpers import load
+from helpers import Exec, load
 
 claude_mac = load('scripts/vps/claude-mac.py', 'claude_mac')
 
@@ -15,6 +21,50 @@ class TooBroad(unittest.TestCase):
         for path in ('/Users/example/code', '/Volumes/ExampleDisk/projects', '/Volumes/示例盘/示例项目/demo app'):
             with self.subTest(path=path):
                 self.assertFalse(claude_mac.too_broad(path))
+
+
+class StateDirectory(unittest.TestCase):
+    def run_project_session(self, linked):
+        project = '/Volumes/示例盘/示例项目/demo app'
+        previous = os.getcwd()
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary, 'home')
+            home.mkdir()
+            control = home / 'claude-vps-mac'
+            actual = Path(temporary, 'existing-state') if linked else control
+            actual.mkdir()
+            if linked:
+                control.symlink_to(actual, target_is_directory=True)
+            session = actual / 'projects' / hashlib.sha256(project.encode()).hexdigest()
+            session.mkdir(parents=True)
+            try:
+                with mock.patch.object(claude_mac.Path, 'home', return_value=home), \
+                        mock.patch.object(claude_mac.os, 'geteuid', return_value=1000), \
+                        mock.patch('sys.argv', ['claude-mac', '--mac-project', project, '--', '-c']), \
+                        mock.patch.object(claude_mac.subprocess, 'run',
+                                          return_value=subprocess.CompletedProcess([], 0, 'Darwin', '')), \
+                        mock.patch.object(claude_mac, 'release_idle_mounts') as release, \
+                        mock.patch.object(claude_mac, 'mount_project',
+                                          side_effect=lambda _, path: os.chdir(path)) as mount, \
+                        mock.patch.object(claude_mac.os, 'execve', side_effect=Exec) as execute:
+                    with self.assertRaises(Exec):
+                        claude_mac.main()
+                    expected = session.resolve()
+                    self.assertEqual(Path.cwd(), expected)
+                    release.assert_called_once_with(actual.resolve(), expected)
+                    mount.assert_called_once_with(project, expected)
+                    env = execute.call_args[0][2]
+                    self.assertEqual(env['MAC_PROJECT_MOUNT'], str(expected))
+                    self.assertEqual(env['MAC_PROJECT_DIR'], project)
+                    self.assertEqual(execute.call_args[0][1][-1], '-c')
+            finally:
+                os.chdir(previous)
+
+    def test_new_deployment_uses_the_project_state_directory(self):
+        self.run_project_session(linked=False)
+
+    def test_state_alias_preserves_actual_mount_and_session_paths(self):
+        self.run_project_session(linked=True)
 
 
 class CacheOutdated(unittest.TestCase):
