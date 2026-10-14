@@ -2,7 +2,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循[语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布] — 0.3.0
+## [0.3.0] — 2026-10-13
 
 ### 新增
 
@@ -18,8 +18,9 @@
 ### 测量
 
 - 30 个文件的本仓库：VPS git 经挂载执行 `status` 37–42 s、`log -n 5` 13 s。CLI 要等 git status 返回才发出第一个 API 请求，启动后 42.4 s 才发出；路由后每次 git 约 0.5 s，第一个请求在 5.6–7.2 s 发出。方法见[部署经验](docs/deployment-experience.md#cli-内部的-git)。
+- 同一仓库的 rg 搜索（每组 3 次中位数）：列出文件经 SSHFS 73.9 s、经 Mac 0.80 s；内容搜索 13.7 s、0.75 s，结果排序后 SHA256 与退出码一致。见[验证记录](docs/validation.md#搜索路由测量)。
 
-## [未发布] — 0.2.0
+## [0.2.0] — 2026-10-13
 
 ### 新增
 
