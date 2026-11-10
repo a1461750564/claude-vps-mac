@@ -89,25 +89,31 @@ class Main(unittest.TestCase):
 
     def test_interactive_session_starts_mosh_on_the_tailnet(self):
         run, execv, execve = self.launch(['-c'])
+        self.assertIn('BatchMode=no', run.call_args[0][0])
         self.assertIn('ss -Hlun', run.call_args[0][0][-1])
         argv = execve.call_args[0][1]
         self.assertIn('--port=60001:60004', argv)
         self.assertIn('HostName=100.70.1.2', argv[1])
+        self.assertIn('BatchMode=yes', argv[1])  # Reuse the password-authenticated master.
         self.assertEqual(argv[argv.index('--') + 1:], ['CLAUDE-VPS', *self.remote('-c')])
         execv.assert_not_called()
 
     def test_non_interactive_call_uses_ssh_and_round_trips_arguments(self):
         tricky = ['-p', "it's $HOME; `x` \"q\""]
-        _, execv, execve = self.launch(tricky, tty=False)
+        run, execv, execve = self.launch(tricky, tty=False)
         argv = execv.call_args[0][1]
+        self.assertIn('BatchMode=yes', run.call_args[0][0])
+        self.assertIn('BatchMode=yes', argv)
         self.assertIn('-T', argv)
         self.assertIn('HostName=100.70.1.2', argv)
         self.assertEqual(shlex.split(argv[-1]), self.remote(*tricky))
         execve.assert_not_called()
 
     def test_tailscale_failure_falls_back_to_the_public_alias(self):
-        _, execv, _ = self.launch([], probe=(255, ''))
+        run, execv, _ = self.launch([], probe=(255, ''))
         argv = execv.call_args[0][1]
+        self.assertIn('BatchMode=no', run.call_args[0][0])
+        self.assertIn('BatchMode=no', argv)
         self.assertNotIn('HostName=100.70.1.2', argv)
         self.assertIn('-tt', argv)
 

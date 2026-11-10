@@ -30,7 +30,11 @@ restrict 禁止转发和 PTY，但仍允许普通命令和 SFTP。来源地址�
 
 ## 3. Mac 到 VPS 的管理入口
 
-沿用现有已验证的管理密钥；新环境才生成独立管理密钥并通过供应商控制台等可信路径把公钥装到 VPS。根据 `examples/mac-ssh.config` 合并 `~/.ssh/config`，填写固定公网主机名/IP 与密钥文件。
+沿用现有已验证的管理入口。根据 `examples/mac-ssh.config` 合并 `~/.ssh/config`，填写固定公网主机名/IP、SSH端口及认证方式。
+
+若使用服务商原密码，去掉模板的 `IdentityFile`，设置 `PubkeyAuthentication no` 和 `PreferredAuthentications password`；保留 `ControlMaster auto`、`ControlPersist` 和 `ControlPath`。交互运行 `claude` 时，OpenSSH会提示密码并建立复用连接，密码不写入启动器配置。非交互入口、`cvm install vps` 和 `cvm doctor`不主动询问密码，需要先通过同一别名、Tailscale地址和HostKeyAlias建立已认证连接。VPS自动回连Mac仍使用前文登记的专用公钥，与管理登录分开。
+
+若使用管理密钥，沿用已有密钥；新环境才生成独立密钥并通过供应商控制台等可信路径安装公钥。
 
 在可信 VPS 控制台核对 SSH 主机公钥，将其加入 Mac known_hosts；HostKeyAlias 必须与启动器 JSON 中一致。此处默认 root 管理入口只用于分发，实际 CLI 经 runuser 以 claude 用户运行。
 

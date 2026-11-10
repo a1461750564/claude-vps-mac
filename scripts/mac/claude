@@ -52,11 +52,12 @@ def main():
     name, args = Path(sys.argv[0]).name, sys.argv[1:]
     remote = ['/root/.local/bin/claude-mac', '--mac-project', os.getcwd(), '--', *args]
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    batch_mode = 'BatchMode=no' if interactive else 'BatchMode=yes'
     mosh = shutil.which('mosh')
     use_mosh = wants_mosh(name, args, interactive, mosh)
     tailnet = ['-o', 'HostName=' + address, '-o', 'HostKeyAlias=' + host_key]
     probe = 'ss -Hlun sport ge :60001 and sport le :60004 | wc -l' if use_mosh else 'true'
-    ready = subprocess.run(['/usr/bin/ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=6',
+    ready = subprocess.run(['/usr/bin/ssh', '-o', batch_mode, '-o', 'ConnectTimeout=6',
                             '-o', 'ControlPersist=1h', *tailnet, alias, probe],
                            stdin=subprocess.DEVNULL, capture_output=True, text=True)
     if ready.returncode:
@@ -73,7 +74,7 @@ def main():
         os.execve(mosh, [mosh, '--ssh=' + ssh, '--experimental-remote-ip=remote', '--port=60001:60004',
                         '--server=env MOSH_SERVER_NETWORK_TMOUT=14400 mosh-server', '--', alias, *remote], env)
     tty = '-tt' if interactive else '-T'
-    os.execv('/usr/bin/ssh', ['/usr/bin/ssh', tty, '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=12',
+    os.execv('/usr/bin/ssh', ['/usr/bin/ssh', tty, '-o', batch_mode, '-o', 'ConnectTimeout=12',
                             *tailnet, alias, shlex.join(remote)])
 
 
