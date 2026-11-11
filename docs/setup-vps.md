@@ -74,6 +74,7 @@ install -m 755 scripts/vps/mac-project.py /usr/local/bin/mac-project
 install -o claude -g claude -m 700 scripts/vps/claude-mac.py /home/claude/.local/bin/claude-mac
 install -o claude -g claude -m 700 scripts/vps/mac-run.py /home/claude/.local/bin/mac-run
 install -o claude -g claude -m 700 scripts/vps/route-bash-hook.py /home/claude/.claude/hooks/route-bash-to-mac.py
+install -o claude -g claude -m 700 scripts/vps/claude-statusline-zh.py /home/claude/.claude/statusline-zh.py
 install -o claude -g claude -m 700 scripts/vps/mac-git.py /home/claude/.local/libexec/claude-mac/git
 install -o claude -g claude -m 700 scripts/vps/mac-rg.py /home/claude/.local/libexec/claude-mac/rg
 ```
@@ -139,3 +140,11 @@ mac-project exec '/absolute/Mac/project/path' 'uname -s; pwd; git status --short
 | Tailscale 直连（按需要） | 到 VPS 的公网 UDP | UDP 41641 |
 
 在自己管理的主机防火墙和 tailnet 访问规则中，按表放行所需方向。Mosh 端口仅向 Mac 的 Tailscale 地址开放。公网 SSH 用于已有管理入口和对话回退，项目脚本不改动该入口或防火墙。
+
+## 7. 可选中文状态栏
+
+`scripts/cvm install vps` 管理状态栏脚本的安装、更新和备份。脚本由 VPS 的 `claude` 用户运行，使用系统 Python 3 标准库。Mac 通过原有终端入口显示状态栏。
+
+需要启用时，以 `claude` 用户先验证并备份现有 `~/.claude/settings.json`。将 [状态栏示例](../examples/claude-statusline.json) 中的 `statusLine` 合并到顶层，保留其他键、文件属主和权限。已有 `statusLine` 时，先保存原值，确认要替换再更新该键。
+
+保存后用 `/usr/bin/python3 -m json.tool ~/.claude/settings.json >/dev/null` 校验 JSON，再按 [状态栏验收与回退](operations.md#中文状态栏) 检查。示例设置空闲时每 10 秒刷新。上下文、缓存和额度以当前会话数据和实际设置为准。[Claude Code 状态栏文档](https://code.claude.com/docs/en/statusline)

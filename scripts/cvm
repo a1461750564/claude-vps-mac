@@ -35,6 +35,7 @@ VPS_FILES = [
     ('scripts/vps/claude-mac.py', '/home/claude/.local/bin/claude-mac', 'claude', 0o700),
     ('scripts/vps/mac-run.py', '/home/claude/.local/bin/mac-run', 'claude', 0o700),
     ('scripts/vps/route-bash-hook.py', '/home/claude/.claude/hooks/route-bash-to-mac.py', 'claude', 0o700),
+    ('scripts/vps/claude-statusline-zh.py', '/home/claude/.claude/statusline-zh.py', 'claude', 0o700),
     ('scripts/vps/mac-git.py', '/home/claude/.local/libexec/claude-mac/git', 'claude', 0o700),
     ('scripts/vps/mac-rg.py', '/home/claude/.local/libexec/claude-mac/rg', 'claude', 0o700),
 ]

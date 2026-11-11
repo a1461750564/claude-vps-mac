@@ -44,6 +44,8 @@ scripts/cvm doctor
 
 路由 Hook 的配置与模型、压缩窗口、缓存、隐私等个人偏好分别提供在 [claude-settings.json](examples/claude-settings.json) 和 [claude-preferences.json](examples/claude-preferences.json)。后者可按需合并，已有设置按键保留。
 
+可选的 Python 中文状态栏显示上下文、输出速度、缓存倒计时和额度。通过 VPS 用户设置启用，SSH 和 Mosh 都可显示。[启用中文状态栏](docs/setup-vps.md#7-可选中文状态栏)
+
 ## 架构
 
 ```mermaid
@@ -124,6 +126,7 @@ Tailscale 只连通两端私网，不设出口节点、不接管 DNS。Mosh 只�
 | `scripts/vps/mac-project.py` | `/usr/local/bin/mac-project` | claude | 固定主机密钥的 SSH；Mac 端进程组守护，断连时清理整组进程 |
 | `scripts/vps/mac-git.py` | `~claude/.local/libexec/claude-mac/git` | claude | CLI 内部 git 路由 |
 | `scripts/vps/mac-rg.py` | `~claude/.local/libexec/claude-mac/rg` | claude | Glob/Grep 路由，保留命中文本与 JSON 输出 |
+| `scripts/vps/claude-statusline-zh.py` | `~claude/.claude/statusline-zh.py` | claude | 可选中文状态栏，随终端宽度调整进度条和换行 |
 | `scripts/cvm` | 不安装，在 Mac 仓库目录运行 | Mac 用户；VPS 部分经管理 SSH 以 root 执行 | 安装、备份、记录所装提交、体检 |
 
 ### 设计取舍与边界

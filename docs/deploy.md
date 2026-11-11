@@ -35,7 +35,7 @@ cd claude-vps-mac
    ```
 
 4. **验证 VPS 到 Mac 的回连。** 按 [回连配置](setup-vps.md#4-vps-到-mac-的-ssh) 建立专用密钥、固定 Mac 主机密钥并填写 `mac-connection.json`。在 VPS 以 `claude` 用户运行 `mac-project check`，应返回 `Darwin` 和预期的 Mac 用户。管理 VPS 的认证与这个回连密钥相互独立。
-5. **合并 CLI 配置。** 按 [CLI 设置](setup-vps.md#5-cli-设置与全局规则) 注册 Bash 路由 Hook。想沿用本项目实装时的模型、压缩窗口、缓存和隐私偏好，可选择合并 `examples/claude-preferences.json` 的对应键；已有的用户配置按键保留。
+5. **合并 CLI 配置。** 按 [CLI 设置](setup-vps.md#5-cli-设置与全局规则) 注册 Bash 路由 Hook。可按需合并 `examples/claude-preferences.json` 的模型、压缩窗口、缓存和隐私偏好，也可 [启用中文状态栏](setup-vps.md#7-可选中文状态栏)。已有的用户配置按键保留。
 6. **在临时项目完成验收。** 按 [首次验收](operations.md#首次验收) 核对实际终端入口、Mac 回连读写和 `cvm doctor`。先用 `claude-ssh` 验证挂载和真实工具调用；配置 Mosh 后，再用 `claude` 验证交互。
 
 `cvm` 管理桥接脚本、启动器、链接和安装记录。官方 CLI 的安装与登录、SSH 授权、连接放行和用户设置由上面的步骤完成。已有部署先核对现状，保留原文件；替换时按安装清单与备份逐项回退。
