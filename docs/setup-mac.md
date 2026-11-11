@@ -10,6 +10,8 @@
 
 登录账号必须对项目及外置盘有真实读写权限。系统隐私权限可能限制远程进程访问特定目录；不能由 Unix mode 或提示词推断已获得 macOS 授权。
 
+在 Mac 上先确认 `/usr/bin/python3 --version` 能运行，且已安装 Git 和 ripgrep。启动器与回连守护使用系统 Python 的绝对路径。项目命令从非交互登录 Zsh 的环境进入 Bash；工具路径按这台 Mac 的实际安装位置配置，再用 [首次验收](operations.md#首次验收) 的回连命令核对。
+
 ## 2. 授权 VPS 公钥
 
 把 VPS 普通 claude 用户生成的 **公钥**追加到本项目账号 `~/.ssh/authorized_keys`。保留现有密钥，一行示例：
@@ -67,10 +69,10 @@ chmod 600 ~/.config/claude-mac/launcher.json
 
 ```bash
 ssh -o HostName=__VPS_TAILSCALE_IPV4__ -o HostKeyAlias=__VPS_PUBLIC_HOSTNAME_OR_IP__ CLAUDE-VPS true
-ssh -o BatchMode=yes -o HostName=__VPS_TAILSCALE_IPV4__ -o HostKeyAlias=__VPS_PUBLIC_HOSTNAME_OR_IP__ CLAUDE-VPS true
+ssh -o BatchMode=yes -o HostName=__VPS_TAILSCALE_IPV4__ -o HostKeyAlias=__VPS_PUBLIC_HOSTNAME_OR_IP__ CLAUDE-VPS id -u
 ```
 
-第一条可交互认证，第二条必须无需再次输入密码即退出 0。密码方式依赖 `ControlMaster` 复用；只登录过公网地址不能代替这项检查。`HostKeyAlias` 用于查找已固定的主机公钥，实际连接地址由 `HostName` 决定。
+第一条可交互认证；第二条应无需再次输入密码并输出 `0`，确认非交互连接使用 root。密码方式依赖 `ControlMaster` 复用；只登录过公网地址不能代替这项检查。`HostKeyAlias` 用于查找已固定的主机公钥，实际连接地址由 `HostName` 决定。
 
 可用 `CLAUDE_MAC_CONFIG` 指向另一份私有 JSON。字段缺失或仍是占位符时，启动器先报错，不发起连接。
 
@@ -84,6 +86,8 @@ scripts/cvm install mac
 ```
 
 已有的 `~/.local/bin/claude` 显示为 unmanaged 时，先确认它是旧的远端启动器而不是原生 CLI，再加 `--adopt`。确保 `~/.local/bin` 在本机 PATH 中；需要时把 `export PATH="$HOME/.local/bin:$PATH"` 合并到现有 shell 配置，不整份覆盖。
+
+在日常使用的终端分别运行 `type -a claude` 和 `type -a claude-ssh`。用于本项目的入口应优先解析到 `~/.local/bin/claude` 与 `~/.local/bin/claude-ssh`。`doctor` 的 PATH 检查只识别可执行文件；同名别名、函数以当前终端的 `type -a` 为准。
 
 ## 6. 可选 Mosh
 

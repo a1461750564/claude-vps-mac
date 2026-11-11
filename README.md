@@ -8,7 +8,7 @@
 
 ## 快速开始
 
-准备一台 Mac、一台可以通过 SSH 管理的 Debian 12 VPS，以及自己的 Claude 账号。按 [从准备到首次验收](docs/deploy.md) 配好双向 SSH、官方 CLI 和本地启动器。安装只需要在 Mac 上克隆本仓库；业务项目继续保存在 Mac。
+准备一台 Mac、一台可通过 SSH 以 `root` 登录且允许普通用户使用 FUSE 的 Debian 12 VPS，以及自己的 Claude 账号。按 [从准备到首次验收](docs/deploy.md) 配好双向 SSH、官方 CLI 和本地启动器。安装只需要在 Mac 上克隆本仓库；业务项目继续保存在 Mac。
 
 部署后，在 Mac 的具体项目目录运行 `claude-ssh`，确认能进入 VPS 上的 Claude Code。配置了 Mosh 时，可用 `claude` 进入交互会话。
 

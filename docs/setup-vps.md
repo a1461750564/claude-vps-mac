@@ -4,7 +4,9 @@
 
 ## 1. 系统与网络前提
 
-需要可用的管理 SSH、TUN 设备和 Claude Code 所需的出站连接。加入与 Mac 相同的 tailnet，记录两端 Tailscale IPv4。安装参照 [Tailscale Linux 文档](https://tailscale.com/docs/install/linux)。
+需要可用的 root SSH 入口、TUN 设备、FUSE 和 Claude Code 所需的出站连接。`cvm` 和远端分发器不会从普通 SSH 用户自动提权。加入与 Mac 相同的 tailnet，记录两端 Tailscale IPv4。安装参照 [Tailscale Linux 文档](https://tailscale.com/docs/install/linux)。
+
+选 VPS 时先确认服务商允许普通用户使用 FUSE。`test -c /dev/fuse` 应退出 0；装了 `sshfs` 和 `fuse3` 并不代表设备可用。设备存在后，还需用 `claude` 用户实际挂载临时项目，见 [首次验收](operations.md#首次验收)。
 
 新加入 tailnet 的 VPS 可按下面的设置启用连接：
 

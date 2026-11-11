@@ -192,7 +192,7 @@ def describe(path):
     return {'sha': digest(data), 'mode': stat.S_IMODE(info.st_mode), 'owner': pwd.getpwuid(info.st_uid).pw_name}
 
 
-def probe(expected):
+def probe(request):
     """Read-only VPS facts for doctor; runs as root over SSH."""
     hook = '/home/claude/.claude/hooks/route-bash-to-mac.py'
     session = ['MAC_PROJECT_DIR=/doctor/project', 'MAC_PROJECT_MOUNT=/doctor/mount', '/usr/bin/python3', hook]
@@ -200,11 +200,18 @@ def probe(expected):
     registered = any(hook in item.get('command', '')
                      for group in settings.get('hooks', {}).get('PreToolUse', []) if group.get('matcher') == 'Bash'
                      for item in group.get('hooks', []))
+    mac = run(AS_CLAUDE + ['/usr/local/bin/mac-project', 'check'])
+    mac_tools = None
+    if mac[0] == 0 and 'system: Darwin' in mac[1]:
+        # Use the same Mac login environment and Bash guard as routed tools.
+        mac_tools = run(AS_CLAUDE + ['/usr/local/bin/mac-project', 'exec', request['project'],
+                                    'git --version && rg --version'])
     print(json.dumps({
-        'files': {path: describe(path) for path in expected},
+        'files': {path: describe(path) for path in request['paths']},
         'manifest': load_json(os.path.join(VPS_STATE, 'manifest.json')),
         'cli': run(AS_CLAUDE + ['/home/claude/.local/bin/claude', '--version']),
-        'mac': run(AS_CLAUDE + ['/usr/local/bin/mac-project', 'check']),
+        'mac': mac,
+        'mac_tools': mac_tools,
         'hook': [run(AS_CLAUDE + session, json.dumps({'tool_input': {'command': command}}))
                  for command in ('uname -s', 'uname -s #vps')],
         'hook_registered': registered,
@@ -236,8 +243,13 @@ def evaluate(report, repository, last_cli):
     if code == 0 and last_cli and version != last_cli:
         rows.append(('WARN', 'CLI 版本变化', '%s → %s：按 docs/operations.md 重做首次验收' % (last_cli, version)))
     code, output, error = report['mac']
-    rows.append(('OK' if code == 0 and 'system: Darwin' in output else 'FAIL', 'VPS → Mac',
-                 'mac-project check 返回 Darwin' if code == 0 else error))
+    mac_ok = code == 0 and 'system: Darwin' in output
+    rows.append(('OK' if mac_ok else 'FAIL', 'VPS → Mac',
+                 'mac-project check 返回 Darwin' if mac_ok else error or output or '无 Darwin 响应'))
+    if mac_ok:
+        code, output, error = report['mac_tools']
+        detail = 'Mac 登录环境可运行 Git 和 rg' if code == 0 else (error.strip() or output.strip() or '退出码 %d' % code)
+        rows.append(('OK' if code == 0 else 'FAIL', 'Mac 回连 Git/rg', detail))
     routed, kept = report['hook']
     try:
         command = json.loads(routed[1])['hookSpecificOutput']['updatedInput']['command']
@@ -330,13 +342,19 @@ def doctor():
     for path, link in MAC_LINKS:
         target = os.readlink(os.path.expanduser(path)) if os.path.islink(os.path.expanduser(path)) else None
         rows.append(('OK' if target == link else 'WARN', path, '→ ' + str(target)))
+    for name in ('claude', 'claude-ssh'):
+        expected = os.path.expanduser('~/.local/bin/' + name)
+        found = shutil.which(name)
+        matches = found is not None and os.path.realpath(found) == os.path.realpath(expected)
+        rows.append(('OK' if matches else 'WARN', 'Mac PATH: ' + name, found if matches else
+                     '%s；预期 %s，请在实际终端运行 type -a %s' % (found or '未找到', expected, name)))
     rows.append(('OK' if shutil.which('mosh') else 'WARN', 'Mosh', shutil.which('mosh') or '未安装，入口使用 SSH'))
     # Through the real entry, from a project directory (a home folder would be refused).
     entry = run([os.path.expanduser('~/.local/bin/claude'), '--version'], cwd=str(ROOT))
     rows.append(('OK' if entry[0] == 0 and 'Claude Code' in entry[1] else 'FAIL', 'Mac 入口 → VPS CLI',
                  entry[1] or entry[2]))
     repository = {dest: (digest((ROOT / source).read_bytes()), owner, mode) for source, dest, owner, mode in VPS_FILES}
-    result = vps(config, 'probe', list(repository), capture=True)
+    result = vps(config, 'probe', {'paths': list(repository), 'project': str(ROOT)}, capture=True)
     try:
         report = json.loads(result.stdout)
     except ValueError:

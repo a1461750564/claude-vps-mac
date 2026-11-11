@@ -143,6 +143,7 @@ def healthy(repository):
         'files': {path: {'sha': sha, 'owner': owner, 'mode': mode} for path, (sha, owner, mode) in repository.items()},
         'manifest': {'commit': 'v0.3.0'}, 'cli': [0, '2.1.296 (Claude Code)', ''],
         'mac': [0, 'host: m\nsystem: Darwin', ''], 'hook': [[0, routed, ''], [0, '', '']],
+        'mac_tools': [0, 'git version 2.39.5\nripgrep 15.2.0', ''],
         'hook_registered': True, 'git': [0, 'git version 2.39.5', ''],
         'rg': [0, 'ripgrep 13.0.0', ''],
         'services': {'tailscaled': 'active', 'ssh': 'active'},
@@ -159,6 +160,13 @@ class Evaluate(unittest.TestCase):
     def test_a_healthy_deployment_is_all_ok(self):
         levels = self.levels(healthy(self.repository), last='2.1.296 (Claude Code)')
         self.assertEqual(set(levels.values()), {'OK'}, levels)
+
+    def test_vps_rg_does_not_hide_a_missing_mac_rg(self):
+        report = healthy(self.repository)
+        report['mac_tools'] = [127, 'git version 2.39.5', '/bin/bash: rg: command not found']
+        rows = {name: (level, detail) for level, name, detail in cvm.evaluate(report, self.repository, None)}
+        self.assertEqual(rows['rg 包装'][0], 'OK')
+        self.assertEqual(rows['Mac 回连 Git/rg'], ('FAIL', '/bin/bash: rg: command not found'))
 
     def test_problems_are_reported(self):
         report = healthy(self.repository)

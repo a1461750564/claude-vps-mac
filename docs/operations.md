@@ -17,13 +17,20 @@
 
 ## 首次验收
 
-先在 Mac 仓库目录运行 `scripts/cvm doctor`。它核对两端脚本、VPS CLI 版本、双向连接、Hook、git/rg 包装和 Mosh 端口，并经真实入口执行一次 `claude --version`；不调用模型，不能代替下面的真实读写验收。CLI 版本与上次通过时不同时，doctor 会提示重做验收。
+先在 Mac 仓库目录运行 `scripts/cvm doctor`。它核对两端脚本、VPS CLI、双向连接、Hook、git/rg 包装和 Mosh 端口，检查当前 PATH 中的启动入口，并经 `mac-project exec` 验证 Mac 登录环境的 Git/rg。它会通过安装路径执行 `claude --version`，但不运行模型，也不写测试文件。CLI 版本变化时会提示重做验收。
 
 使用独立测试目录，不直接以业务项目试错。以下既是首次安装验收，也是 CLI 更新后的最低回归范围：
 
-1. VPS claude 用户运行 mac-project check，核对 Darwin、真实 Mac 用户和路径。
-2. Mac 项目目录运行 claude --version，核对官方 CLI 版本；交互启动时核对订阅和权限模式。
-3. 在对话中调用 Bash 执行 uname -s; pwd，检查 hook 自动路由；加 #vps 对照应返回 Linux。再执行 `command -v git #vps` 应返回 `~/.local/libexec/claude-mac/git`，`git rev-parse --show-toplevel #vps` 应在约 0.5 s 内返回挂载路径。
+1. 在 Mac 项目所在磁盘新建一个空的临时目录，记下绝对路径。VPS 以 `claude` 用户运行 `mac-project check`，核对 Darwin 和 Mac 账号。再将以下命令中的路径换成该临时目录：
+
+   ```bash
+   mac-project exec '/absolute/Mac/path/Claude 验收' \
+     'git --version && rg --version && printf "%s\n" cvm-write-ok > .cvm-write-check && cat .cvm-write-check'
+   ```
+
+   确认输出版本与 `cvm-write-ok`，并在 Mac 独立读回 `.cvm-write-check`。这一步验证回连命令和目录权限。再在 Mac 的临时目录运行 `git init`，供下面的 Git 路由检查使用。
+2. 在实际使用的 Mac 终端，用 `type -a claude`、`type -a claude-ssh` 核对入口。进入临时目录运行 `claude-ssh --version`，验证启动器能以 VPS 普通用户建立项目挂载并运行官方 CLI。再运行 `claude-ssh` 核对订阅和权限模式。
+3. 在对话中调用 Bash 执行 `uname -s; pwd`，检查 Hook 自动路由。执行 `uname -s #vps` 应返回 Linux。`command -v git #vps` 应返回 `~/.local/libexec/claude-mac/git`，`git rev-parse --show-toplevel #vps` 应返回临时项目在 VPS 上的挂载路径。
 4. 准备一个文本夹具和独立测试，让 Claude 原生 Read、Edit、Write；Mac 本机独立读回 diff，运行测试并核对退出码和 Darwin，不修改测试断言。
 5. 如需图像、子 agent、Notebook、MCP、项目 hooks，逐项验证真实工具调用和执行主机。基本文本验收不能代表这些能力全部可用。
    搜索路由需在独立目录实际调用 Glob 与 Grep，核对文件列表、命中文本、中文空格路径及无匹配结果；直接运行 rg 不能替代模型工具调用的验收。
