@@ -72,13 +72,15 @@ class Decide(unittest.TestCase):
                         'mac-project exec /x \'tar -cf - out\' | tar -xf - -C /tmp/o',
                         '# fetch\nP=1 /usr/local/bin/mac-project exec /x true',
                         'mac-project exec /x "cat s.json" > /tmp/o/s.json && python3 -I -c "print(1)"',
+                        'echo "<<EOF"\nmac-project check',
                         'mac-project check; ps aux | grep -c sshfs', "mac-project exec /x 'ls' | python3 - <<EOF\nimport sys\nEOF"):
             with self.subTest(command=command):
                 self.assertIsNone(decide(command))
 
     def test_mac_project_as_data_still_goes_to_the_mac(self):
         for command in ('rg -n "mac-project exec" docs', 'echo "a; mac-project b"', 'cat a | grep mac-project',
-                        'cat > notes.md <<EOF\nmac-project exec /x true\nEOF', "echo 'unbalanced",
+                        'printf "%s\\n" "|" mac-project', r'printf "%s\n" \; mac-project',
+                        "cat > notes.md <<'EOF'\nmac-project exec /x true\nEOF", "echo 'unbalanced",
                         "echo 'x' > mac-project.txt"):
             with self.subTest(command=command):
                 self.assertRouted(command)
@@ -114,6 +116,8 @@ class Decide(unittest.TestCase):
     def test_vps_program_mixed_with_mac_work_is_refused(self):
         env = dict(ENV, HOME='/home/claude')
         for command in ('pnpm test && sh ~/.claude/skills/c/s.sh', 'mac-project exec /x true; npm run build',
+                        'mac-project check; ./scripts/build.sh',
+                        'mac-project check; ' + ENV['MAC_PROJECT_MOUNT'] + '/scripts/build.sh',
                         'mac-project check; python3 scripts/report.py', 'node build.mjs | sh ~/.claude/skills/c/s.sh'):
             with self.subTest(command=command):
                 with self.assertRaises(hook.Refused) as caught:

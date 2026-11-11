@@ -20,6 +20,9 @@ MAC_RUN = os.path.expanduser('~/.local/bin/mac-run')
 VPS_MARK = re.compile(r'(^|\s)#vps\s*$')
 BARE_CD = re.compile(r'''cd(\s+("[^"]*"|'[^']*'|[^\s;&|<>`$()'"]+))?''')
 HEREDOC = re.compile(r'''(?<!<)<<(?!<)(-?)\s*(["']?)([A-Za-z_][A-Za-z0-9_]*)\2''')
+QUOTED_OR_ESCAPED = re.compile(r'''\\[^\n]|'[^']*'|"(?:[^"\\]|\\.)*"''', re.DOTALL)
+PUNCTUATION = '();&|<>'
+LITERAL_PUNCTUATION = str.maketrans({char: '\0%d' % index for index, char in enumerate(PUNCTUATION)})
 # After these words the next word is a command; after the closing ones it is not.
 OPENS = {'then', 'do', 'else', 'elif', 'if', 'while', 'until', '!', 'time', '{'}
 CLOSES = {'done', 'fi', 'esac', '}', 'for', 'case', 'select', 'function'}
@@ -37,6 +40,15 @@ class Refused(Exception):
     """A command that cannot run correctly on either host as written."""
 
 
+def protect_punctuation(command):
+    # shlex strips quoting and would otherwise make a literal '|' look like a pipe.
+    return QUOTED_OR_ESCAPED.sub(lambda match: match[0].translate(LITERAL_PUNCTUATION), command)
+
+
+def restore_punctuation(word):
+    return re.sub(r'\x00([0-6])', lambda match: PUNCTUATION[int(match[1])], word)
+
+
 def without_heredoc_bodies(command):
     """Heredoc bodies are data: drop them so their lines are not read as commands."""
     kept, pending = [], []
@@ -47,7 +59,8 @@ def without_heredoc_bodies(command):
                 pending.pop(0)
             continue
         kept.append(line)
-        pending += [(match.group(1) == '-', match.group(3)) for match in HEREDOC.finditer(line)]
+        pending += [(match.group(1) == '-', match.group(3))
+                    for match in HEREDOC.finditer(protect_punctuation(line))]
     return '\n'.join(kept)
 
 
@@ -56,7 +69,7 @@ def tokens(command):
     result, chunk = [], ''
     for line in without_heredoc_bodies(command).split('\n'):
         chunk = chunk + '\n' + line if chunk else line
-        lexer = shlex.shlex(chunk, posix=True, punctuation_chars=True)
+        lexer = shlex.shlex(protect_punctuation(chunk), posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
         try:
             words = list(lexer)
@@ -99,7 +112,7 @@ def programs(command):
                     if not argument.startswith('-'):
                         program = argument
                         break
-            found.append((word, program))
+            found.append((restore_punctuation(word), restore_punctuation(program)))
             expecting = False
     return found
 
@@ -121,6 +134,21 @@ def vps_only(program, environ):
     # a project file named that way is still the mount, not a VPS-only program.
     real = os.path.realpath(program)
     return not (real == mount or real.startswith(mount + '/'))
+
+
+def project_program(word, program, environ):
+    if os.path.basename(word) in TOOLCHAIN:
+        return True
+    if vps_only(program, environ):
+        return False
+    if program != word and program != '-':
+        return True
+    if not os.path.isabs(program):
+        return '/' in program
+    mount_prefix = environ['MAC_PROJECT_MOUNT'].rstrip('/') + '/'
+    return (program.startswith(environ['MAC_PROJECT_DIR'].rstrip('/') + '/')
+            or program.startswith(mount_prefix)
+            or os.path.realpath(program).startswith(mount_prefix))
 
 
 def decide(event, environ):
@@ -147,8 +175,7 @@ def decide(event, environ):
         found = [('mac-project', 'mac-project')] if stripped.startswith('mac-project ') else []
     vps = [word for word, program in found if vps_only(program, environ)]
     if vps:
-        mac = sorted({word for word, program in found if os.path.basename(word) in TOOLCHAIN
-                      or (program != word and program != '-' and not vps_only(program, environ))})
+        mac = sorted({word for word, program in found if project_program(word, program, environ)})
         if mac:
             raise Refused('命令同时含只在 VPS 存在的程序（%s）和应在 Mac 执行的项目命令（%s），未执行。'
                           '请拆成两条：VPS 部分末尾加 #vps，项目命令照常在 Mac 执行。'
