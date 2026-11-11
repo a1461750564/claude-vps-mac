@@ -4,13 +4,45 @@
 
 在 Mac 的项目目录输入 `claude`，对话的是 VPS 上以普通用户运行的官方 CLI。订阅登录和模型请求使用 VPS 的网络出口；Bash 命令、git、搜索和文件读写都落在 Mac 的同一个项目目录上。项目只在 Mac 保留一份，不做同步副本。
 
-这是一次个人部署整理出的经验项目，包含实际使用的脚本、配置模板、部署步骤、测量数据和取舍。
+仓库提供两端桥接脚本、Mac 本地启动器、安装与体检命令，以及可按自己环境填写的配置模板。每套部署连接一台 Mac 和一台 VPS，使用者在 VPS 上登录自己的 Claude 账号。
 
 ## 快速开始
 
-准备一台 Mac、一台可通过 SSH 以 `root` 登录且允许普通用户使用 FUSE 的 Debian 12 VPS，以及自己的 Claude 账号。按 [从准备到首次验收](docs/deploy.md) 配好双向 SSH、官方 CLI 和本地启动器。安装只需要在 Mac 上克隆本仓库；业务项目继续保存在 Mac。
+先确认两端满足以下条件。用户名、项目路径、SSH 端口和工具安装位置按自己的机器填写。
 
-部署后，在 Mac 的具体项目目录运行 `claude-ssh`，确认能进入 VPS 上的 Claude Code。配置了 Mosh 时，可用 `claude` 进入交互会话。
+| 对象 | 准备条件 |
+| --- | --- |
+| Mac | Tailscale、远程登录、`/usr/bin/python3`、Git 和 ripgrep。登录账号可读写项目及其所在磁盘，非交互登录环境能找到项目工具链。 |
+| VPS | Debian 12，可通过 SSH 以 root 登录，具备 TUN、`/dev/fuse` 和普通用户 FUSE 挂载能力。官方 CLI 使用固定账号 `claude` 与 `/home/claude`。 |
+| 连接与账号 | 两端加入同一 tailnet，允许双向 SSH，核对并固定主机密钥。准备自己的 Claude 账号与可用订阅，Mosh 可选。 |
+
+在 Mac 上克隆仓库：
+
+```bash
+git clone https://github.com/a1461750564/claude-vps-mac.git
+cd claude-vps-mac
+```
+
+按 [从准备到首次验收](docs/deploy.md) 配置两端依赖、VPS 普通账号与官方 CLI、管理 SSH 和本地 `launcher.json`。确认管理 SSH 能非交互以 root 登录后，在 Mac 仓库目录安装桥接脚本与启动器：
+
+```bash
+scripts/cvm install vps --dry-run
+scripts/cvm install vps
+scripts/cvm install mac --dry-run
+scripts/cvm install mac
+```
+
+dry run 会列出将要安装的文件。出现 `modified` 或 `unmanaged` 时，先核对旧文件的用途，确认接管后再使用 `--adopt`。替换前自动备份，并记录安装提交。
+
+接着按部署指南完成 VPS → Mac 的专用 SSH 授权与 Bash Hook 注册，再运行体检：
+
+```bash
+scripts/cvm doctor
+```
+
+体检核对两端脚本、官方 CLI、回连 Mac 的 Git/rg、当前 PATH 中的启动入口和 Hook。实际终端还应运行 `type -a claude` 与 `type -a claude-ssh`，确认优先使用本地启动器。首次使用在临时项目目录运行 `claude-ssh --version` 和 `claude-ssh`，按 [首次验收](docs/operations.md#首次验收) 完成读写、搜索、执行主机与进程清理检查。配置 Mosh 后再验交互会话。
+
+路由 Hook 的配置与模型、压缩窗口、缓存、隐私等个人偏好分别提供在 [claude-settings.json](examples/claude-settings.json) 和 [claude-preferences.json](examples/claude-preferences.json)。后者可按需合并，已有设置按键保留。
 
 ## 架构
 
@@ -47,7 +79,7 @@ flowchart LR
 
 | 通道 | 路径 | 承载 |
 | --- | --- | --- |
-| 对话 | Mac 终端 → Mosh（默认）或 SSH，经 Tailscale → VPS | 按键和终端画面 |
+| 对话 | Mac 终端 → Mosh（已配置时优先）或 SSH，经 Tailscale → VPS | 按键和终端画面 |
 | 操作 | VPS → SSH，经 Tailscale、固定主机密钥 → Mac | 命令通道承载 Bash、CLI 内部 git、Glob/Grep；SFTP 挂载承载文件读写 |
 | 模型 | VPS 上的 CLI → HTTPS → Anthropic | 订阅登录与模型请求，使用 VPS 原有出口 |
 | 部署 | Mac 仓库 → 管理 SSH（root）→ VPS | `cvm` 安装与体检，不参与日常对话 |
@@ -59,7 +91,7 @@ Tailscale 只连通两端私网，不设出口节点、不接管 DNS。Mosh 只�
 | 调用 | 执行位置 | 机制 | 实测 |
 | --- | --- | --- | --- |
 | Bash（默认） | Mac 的 `/bin/bash`，独立进程组 | PreToolUse hook → mac-run → mac-project | 约 0.5 s/次 |
-| Bash 首行或末行末尾带 `#vps`、单独 `cd`，或运行只在 VPS 存在的程序（mac-project、`~/.claude` 下的技能脚本、scratchpad 脚本） | VPS | hook 放行；与项目工具链混写时拒绝 | — |
+| Bash 首行或末行末尾带 `#vps`、单独 `cd`，或运行只在 VPS 存在的程序（mac-project、`~/.claude` 下的技能脚本、scratchpad 脚本） | VPS | 显式 `#vps` 原样执行；自动识别的 VPS 程序与项目工具链或项目脚本混写时拒绝 | — |
 | Read / Edit / Write / NotebookEdit | VPS 进程读写 Mac 文件 | SSHFS 实时挂载，不缓存内容，同步写入 | 读写链路：Read 约 3 s，Edit 约 3–4 s；Write / NotebookEdit 未单独测量 |
 | CLI 内部 git（会话上下文、diff、worktree） | Mac | PATH 上的 mac-git | 约 0.5 s/次 |
 | Glob / Grep | Mac 上的 rg | `USE_BUILTIN_RIPGREP=0` 加 PATH 上的 mac-rg | 本仓库 rg 阶段约 0.8 s；完整工具耗时另计 |
@@ -71,7 +103,7 @@ Tailscale 只连通两端私网，不设出口节点、不接管 DNS。Mosh 只�
 - **Bash** 通过官方 PreToolUse hook 改写命令；
 - **CLI 自己调用的 git 和 rg** 都从 PATH 查找，所以只需在 Mac 项目会话的 PATH 最前放包装程序。
 
-包装程序只接管挂载内的调用：先把挂载路径换成 Mac 路径，经 mac-project 在 Mac 执行，再把输出里的 Mac 路径映射回挂载路径。涉及 VPS 路径的调用、版本查询等，仍交给 VPS 上的原程序。
+包装程序只接管挂载内的调用：先把文件路径换成 Mac 路径，经 mac-project 在 Mac 执行，再把结果中的文件路径映射回挂载路径。rg 的正则、glob 和命中文本保持原样。涉及 VPS 路径的调用、版本查询等，仍交给 VPS 上的原程序。
 
 ### 一次启动
 
@@ -120,7 +152,7 @@ Tailscale 只连通两端私网，不设出口节点、不接管 DNS。Mosh 只�
 在 Mac 的具体项目目录中：
 
 ```bash
-claude        # 默认 Mosh
+claude        # 自动选择 Mosh / SSH
 claude -c     # 继续本项目最近的会话
 claude-ssh    # 强制使用 SSH
 ```
@@ -145,13 +177,13 @@ claude-ssh    # 强制使用 SSH
 测试只用 Python 标准库，不联网、不调用模型：
 
 ```bash
-python3 -m unittest discover -s tests
+python3 -W error::ResourceWarning -m unittest discover -s tests
 ```
 
-Mac 端进程守护依赖 macOS kqueue，相关用例只在 macOS 上运行。CI 在 Ubuntu 和 macOS（系统 Python）各跑一遍。单元测试不能替代真实部署后的[验收](docs/operations.md)。
+CI 在 Ubuntu 24.04 与 macOS 15（系统 Python）上运行同一套测试。Mac 端进程守护依赖 kqueue，相关用例只在 macOS 上运行。真实 rg 对照用例要求 PATH 中有 `rg`，缺少时会跳过，测试输出会列出原因。真实部署还需完成[首次验收](docs/operations.md#首次验收)，验证自己机器上的读写、工具路由与断连清理。
 
 ## 项目范围
 
 项目只部署 Claude 工作流及所需的连接。使用者自己准备可登录的 VPS 和 Mac、双向 SSH 授权与 Claude 订阅；仓库不包含凭据、会话记录或业务项目。
 
-路由 Hook 和个人偏好分开合并。可选示例包含原部署的模型、权限、上下文与隐私选项，详见 [VPS 配置](docs/setup-vps.md#5-cli-设置与全局规则)。多个会话编辑同一文件仍可能冲突。
+项目依赖和运行环境沿用 Mac 上的现有配置，远程登录进程需要相应的路径与目录权限。多个会话编辑同一文件仍可能冲突，详见 [使用、验收与回退](docs/operations.md)。
