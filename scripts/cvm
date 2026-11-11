@@ -200,10 +200,6 @@ def probe(expected):
     registered = any(hook in item.get('command', '')
                      for group in settings.get('hooks', {}).get('PreToolUse', []) if group.get('matcher') == 'Bash'
                      for item in group.get('hooks', []))
-    with open('/proc/meminfo') as handle:
-        memory = {line.split(':')[0]: int(line.split()[1]) for line in handle}
-    with open('/proc/mounts') as handle:
-        mounts = sum(1 for line in handle if line.split()[2] == 'fuse.sshfs')
     print(json.dumps({
         'files': {path: describe(path) for path in expected},
         'manifest': load_json(os.path.join(VPS_STATE, 'manifest.json')),
@@ -216,8 +212,6 @@ def probe(expected):
         'rg': run(AS_CLAUDE + ['/home/claude/.local/libexec/claude-mac/rg', '--version']),
         'services': {name: run(['systemctl', 'is-active', name])[1] for name in ('tailscaled', 'ssh')},
         'mosh': run(['ss', '-Hlun', 'sport', 'ge', ':60001', 'and', 'sport', 'le', ':60004'])[1],
-        'mounts': mounts,
-        'memory_mib': {key: memory.get(key, 0) // 1024 for key in ('MemAvailable', 'SwapFree')},
     }))
     return 0
 
@@ -263,9 +257,6 @@ def evaluate(report, repository, last_cli):
     exposed = [address for address in addresses if not tailnet(address)]
     rows.append(('WARN' if exposed else 'OK', 'Mosh 端口', '%d/4 占用%s' % (
         len(addresses), '，非 tailnet 地址：' + ', '.join(exposed) if exposed else '')))
-    available = report['memory_mib']['MemAvailable']
-    rows.append(('WARN' if available < 300 else 'OK', 'VPS 内存', '可用 %d MiB，swap 空闲 %d MiB，SSHFS 挂载 %d 个' % (
-        available, report['memory_mib']['SwapFree'], report['mounts'])))
     return rows
 
 

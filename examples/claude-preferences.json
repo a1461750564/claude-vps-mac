@@ -1,0 +1,20 @@
+{
+  "model": "opus",
+  "modelSettings": {
+    "claude-opus-5-5": {"effortLevel": "xhigh"},
+    "claude-opus-4-8": {"effortLevel": "medium"}
+  },
+  "permissions": {"defaultMode": "bypassPermissions"},
+  "env": {
+    "CLAUDE_CODE_PROMPT_CACHE_TTL": "1h",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "272000",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "DO_NOT_TRACK": "1",
+    "OTEL_METRICS_EXPORTER": "none",
+    "OTEL_LOGS_EXPORTER": "none",
+    "OTEL_TRACES_EXPORTER": "none"
+  }
+}

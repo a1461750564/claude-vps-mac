@@ -64,7 +64,7 @@ mac-git 让这些调用经 mac-project 在 Mac 执行，每次约 0.5 s；同一
 
 ## 资源和待验收项
 
-单会话 CLI RSS 约 389–434 MiB，mosh-server 约 11 MiB，每个 sshfs 约 2–8 MiB，同机节点约 82 MiB；RSS 简单相加不等于实际物理内存需求。
+单会话 CLI RSS 约 389–434 MiB，mosh-server 约 11 MiB，每个 sshfs 约 2–8 MiB；RSS 简单相加不等于实际物理内存需求。
 
 2 GiB + swap 的原环境在轻负载下可用，不保证复杂项目、多个 agent、多会话都不会内存紧张。新建优先 4 GiB；不要把四个 Mosh 端口等同于四个会话的资源保证。
 

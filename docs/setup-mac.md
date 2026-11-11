@@ -1,6 +1,6 @@
 # 配置 Mac
 
-本机需要 Tailscale、远程登录、系统 Python、SSH 和已有的 rg。Mosh 是终端体验选项，没有安装时启动器使用 SSH。以下手动安装步骤面向新使用者，不用于覆盖已经在线的部署。
+从 [部署顺序](deploy.md) 开始，本页提供 Mac 侧操作细节。本机需要 Tailscale、远程登录、系统 Python、SSH、Git 和 ripgrep。Mosh 为可选项，未安装时启动器使用 SSH。
 
 ## 1. 私网与远程登录
 
@@ -36,11 +36,17 @@ restrict 禁止转发和 PTY，但仍允许普通命令和 SFTP。来源地址�
 
 若使用管理密钥，沿用已有密钥；新环境才生成独立密钥并通过供应商控制台等可信路径安装公钥。
 
-在可信 VPS 控制台核对 SSH 主机公钥，将其加入 Mac known_hosts；HostKeyAlias 必须与启动器 JSON 中一致。此处默认 root 管理入口只用于分发，实际 CLI 经 runuser 以 claude 用户运行。
+在可信 VPS 控制台核对 SSH 主机公钥，将其追加到 Mac 的 `~/.ssh/known_hosts`。以下以 Ed25519 为例，公钥类型和值按实机填写：
 
-## 4. 安装配置与启动器
+```text
+__VPS_PUBLIC_HOSTNAME_OR_IP__ ssh-ed25519 __VERIFIED_VPS_PUBLIC_HOST_KEY__
+```
 
-在本仓库目录中执行；若 `~/.local/bin/claude` 已存在，先核对它是原生 CLI 还是已有远端启动器，保留备份，避免直接覆盖。
+第一列是 `HostKeyAlias`，须与启动器 JSON 中一致。此处的 root SSH 入口负责管理和分发，实际 CLI 经 `runuser` 以 `claude` 用户运行。
+
+## 4. 准备启动器配置
+
+首次配置时，在本仓库目录中执行。已有 `launcher.json` 时先核对并按键更新，不整份覆盖。
 
 ```bash
 mkdir -p ~/.config/claude-mac ~/.local/bin
@@ -57,7 +63,20 @@ chmod 600 ~/.config/claude-mac/launcher.json
 | tailscale_host | VPS 的 Tailscale IPv4，不是公网 IP |
 | host_key_alias | 与已验证 VPS 主机密钥条目一致的主机名/IP |
 
-确认配置后，用 cvm 安装启动器和 claude-ssh、claude-mosh 两个链接，已有文件先备份到 `~/.local/state/claude-vps-mac/backups/`：
+在 Mac 终端用与 `cvm` 相同的连接参数验证。下列地址、主机密钥别名和 SSH 别名按实际配置替换：
+
+```bash
+ssh -o HostName=__VPS_TAILSCALE_IPV4__ -o HostKeyAlias=__VPS_PUBLIC_HOSTNAME_OR_IP__ CLAUDE-VPS true
+ssh -o BatchMode=yes -o HostName=__VPS_TAILSCALE_IPV4__ -o HostKeyAlias=__VPS_PUBLIC_HOSTNAME_OR_IP__ CLAUDE-VPS true
+```
+
+第一条可交互认证，第二条必须无需再次输入密码即退出 0。密码方式依赖 `ControlMaster` 复用；只登录过公网地址不能代替这项检查。`HostKeyAlias` 用于查找已固定的主机公钥，实际连接地址由 `HostName` 决定。
+
+可用 `CLAUDE_MAC_CONFIG` 指向另一份私有 JSON。字段缺失或仍是占位符时，启动器先报错，不发起连接。
+
+## 5. 安装本地启动器
+
+按 [部署顺序](deploy.md) 安装 VPS 脚本后，用 cvm 安装启动器和 `claude-ssh`、`claude-mosh` 两个链接。替换的文件备份到 `~/.local/state/claude-vps-mac/backups/`：
 
 ```bash
 scripts/cvm install mac --dry-run
@@ -66,16 +85,14 @@ scripts/cvm install mac
 
 已有的 `~/.local/bin/claude` 显示为 unmanaged 时，先确认它是旧的远端启动器而不是原生 CLI，再加 `--adopt`。确保 `~/.local/bin` 在本机 PATH 中；需要时把 `export PATH="$HOME/.local/bin:$PATH"` 合并到现有 shell 配置，不整份覆盖。
 
-可用 `CLAUDE_MAC_CONFIG` 指向另一份私有 JSON。字段缺失或仍是占位符时，启动器先报错，不发起连接。
-
-## 5. 可选 Mosh
+## 6. 可选 Mosh
 
 原部署使用 Homebrew Mosh 1.4.0，启动器从 PATH 查找 mosh。按 [Mosh 安装说明](https://mosh.org/#getting) 安装本机客户端；遵循自己的运行环境管理约定，不额外安装业务 Node/Python 或容器。
 
 交互终端默认用 Mosh；`claude-ssh` 强制 SSH。非终端、help/version/print 和子命令走 SSH。Mosh 端口占满时回退 SSH；UDP 建立阶段失败时需手动选择 claude-ssh，不自动启动第二个会话。
 
-## 6. 首次使用
+## 7. 首次使用
 
 进入具体项目目录运行 `claude --version`、`claude`，执行 [真实验收](operations.md)。不要从家目录或整盘根目录启动；启动器会拒绝这些路径。
 
-项目依赖和测试使用 Mac 上已有的项目环境。原部署通过 EnvKit 管理，若你使用别的管理器，以项目规范和实际版本为准，远端登录 PATH 不能替代这项核验。
+项目依赖和测试使用 Mac 上已有的项目环境。验收时用实际项目命令确认远程登录环境能找到它们。

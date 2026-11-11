@@ -6,6 +6,12 @@
 
 这是一次个人部署整理出的经验项目，包含实际使用的脚本、配置模板、部署步骤、测量数据和取舍。
 
+## 快速开始
+
+准备一台 Mac、一台可以通过 SSH 管理的 Debian 12 VPS，以及自己的 Claude 账号。按 [从准备到首次验收](docs/deploy.md) 配好双向 SSH、官方 CLI 和本地启动器。安装只需要在 Mac 上克隆本仓库；业务项目继续保存在 Mac。
+
+部署后，在 Mac 的具体项目目录运行 `claude-ssh`，确认能进入 VPS 上的 Claude Code。配置了 Mosh 时，可用 `claude` 进入交互会话。
+
 ## 架构
 
 ```mermaid
@@ -109,21 +115,6 @@ Tailscale 只连通两端私网，不设出口节点、不接管 DNS。Mosh 只�
 
 以上是原部署（Debian 12，2 vCPU / 2 GiB；macOS 15.8；CLI 2.1.296）在 2026-10-13 测得的样本。搜索以 16 个 Python 文件、147 行匹配为负载，各 3 次中位数；这些耗时不包含模型响应及 CLI 后续处理。启动样本为 3 次，按键往返为 60 次。方法和原始数据见 [部署经验与测量](docs/deployment-experience.md) 和 [验证记录](docs/validation.md)。
 
-## 部署
-
-按 [VPS 配置](docs/setup-vps.md) 和 [Mac 配置](docs/setup-mac.md) 准备两端：Tailscale、Mac 远程登录、VPS 上的普通用户与官方 CLI 登录、SSHFS、Bash hook 和防火墙。模板中的 `__...__` 必须换成自己的值，填写后的文件不要提交。
-
-之后在 Mac 的仓库目录用 cvm 安装和体检：
-
-```bash
-scripts/cvm install vps --dry-run   # 逐个文件显示 new / same / update / modified / unmanaged
-scripts/cvm install vps             # 首次接管已有部署时加 --adopt；替换前会备份
-scripts/cvm install mac             # 接管已有旧入口时同样先核对，再加 --adopt
-scripts/cvm doctor                  # 两端文件、连接、路由、服务；CLI 更新后也运行一次
-```
-
-原部署用的是 2 GiB 内存加 2 GiB swap，这只是轻负载下的实测结果，**不是推荐配置**。新建 VPS 应优先选 4 GiB，[官方安装指南](https://code.claude.com/docs/en/setup)列出的要求也是 4 GB 以上。
-
 ## 日常使用
 
 在 Mac 的具体项目目录中：
@@ -140,6 +131,7 @@ claude-ssh    # 强制使用 SSH
 
 | 主题 | 内容 |
 | --- | --- |
+| [从准备到首次验收](docs/deploy.md) | 按顺序安装官方 CLI、两端桥接脚本与 Mac 启动器 |
 | [链路与边界](docs/architecture.md) | 通道、工具路由、一致性、权限与失败回退 |
 | [配置 VPS](docs/setup-vps.md) | 普通用户、CLI 登录、SSHFS、hook 与防火墙 |
 | [配置 Mac](docs/setup-mac.md) | Tailscale、远程登录、固定主机密钥与启动器 |
@@ -160,6 +152,6 @@ Mac 端进程守护依赖 macOS kqueue，相关用例只在 macOS 上运行。CI
 
 ## 项目范围
 
-仓库不包含服务器凭据、订阅令牌、代理节点配置、第三方技能或终端运行时副本、业务项目，现有代理节点也无需改动。本项目不保证注册、住宅 IP 稳定性或模型风控结果。
+项目只部署 Claude 工作流及所需的连接。使用者自己准备可登录的 VPS 和 Mac、双向 SSH 授权与 Claude 订阅；仓库不包含凭据、会话记录或业务项目。
 
-模板沿用原部署的 `bypassPermissions` 和 `xhigh`，并不适合所有用户；权限与用量策略见 [VPS 配置](docs/setup-vps.md)。多个会话编辑同一文件仍可能冲突。
+路由 Hook 和个人偏好分开合并。可选示例包含原部署的模型、权限、上下文与隐私选项，详见 [VPS 配置](docs/setup-vps.md#5-cli-设置与全局规则)。多个会话编辑同一文件仍可能冲突。

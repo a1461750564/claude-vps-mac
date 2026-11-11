@@ -146,8 +146,7 @@ def healthy(repository):
         'hook_registered': True, 'git': [0, 'git version 2.39.5', ''],
         'rg': [0, 'ripgrep 13.0.0', ''],
         'services': {'tailscaled': 'active', 'ssh': 'active'},
-        'mosh': 'UNCONN 0 0 100.101.1.2:60001 0.0.0.0:*', 'mounts': 1,
-        'memory_mib': {'MemAvailable': 1400, 'SwapFree': 2000},
+        'mosh': 'UNCONN 0 0 100.101.1.2:60001 0.0.0.0:*',
     }
 
 
