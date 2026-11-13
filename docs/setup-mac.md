@@ -12,9 +12,11 @@
 
 在 Mac 上先确认 `/usr/bin/python3 --version` 能运行，且已安装 Git 和 ripgrep。启动器与回连守护使用系统 Python 的绝对路径。项目命令从非交互登录 Zsh 的环境进入 Bash；工具路径按这台 Mac 的实际安装位置配置，再用 [首次验收](operations.md#首次验收) 的回连命令核对。
 
+先运行 `/bin/zsh -lc 'command -v git; command -v rg; /usr/bin/python3 --version'` 检查登录环境。只写在 `.zshrc` 中的交互配置不一定会加载；按已有环境管理器的方式让非交互登录 shell 找到项目工具。Apple Silicon 与 Intel 的工具安装路径可能不同，不直接复制其他电脑的 PATH。`/usr/bin/python3` 不可用时，先完成 Apple Command Line Tools 的安装与授权，再继续部署。
+
 ## 2. 授权 VPS 公钥
 
-把 VPS 普通 claude 用户生成的 **公钥**追加到本项目账号 `~/.ssh/authorized_keys`。保留现有密钥，一行示例：
+先用 `mkdir -p ~/.ssh` 和 `chmod 700 ~/.ssh` 准备目录，再把 VPS 普通 claude 用户生成的 **公钥**追加到本项目账号 `~/.ssh/authorized_keys`（首次使用则创建此文件）。保留现有密钥，一行示例：
 
 ```text
 restrict,from="__VPS_TAILSCALE_IPV4__" ssh-ed25519 __VPS_TO_MAC_PUBLIC_KEY__ claude-vps-to-mac
@@ -80,18 +82,43 @@ ssh -o BatchMode=yes -o HostName=__VPS_TAILSCALE_IPV4__ -o HostKeyAlias=__VPS_PU
 
 按 [部署顺序](deploy.md) 安装 VPS 脚本后，用 cvm 安装启动器和 `claude-ssh`、`claude-mosh` 两个链接。替换的文件备份到 `~/.local/state/claude-vps-mac/backups/`：
 
+安装前运行 `type -a claude`；如果 `~/.local/bin/claude` 已是本机原生 CLI，先完成下方的共存步骤。
+
 ```bash
 scripts/cvm install mac --dry-run
 scripts/cvm install mac
 ```
 
-已有的 `~/.local/bin/claude` 显示为 unmanaged 时，先确认它是旧的远端启动器而不是原生 CLI，再加 `--adopt`。确保 `~/.local/bin` 在本机 PATH 中；需要时把 `export PATH="$HOME/.local/bin:$PATH"` 合并到现有 shell 配置，不整份覆盖。
+已有旧的远端启动器显示为 unmanaged 时，核对后再加 `--adopt`；已有原生 CLI 按下方步骤处理。确保 `~/.local/bin` 在本机 PATH 中；需要时把 `export PATH="$HOME/.local/bin:$PATH"` 合并到现有 shell 配置，不整份覆盖。
 
 在日常使用的终端分别运行 `type -a claude` 和 `type -a claude-ssh`。用于本项目的入口应优先解析到 `~/.local/bin/claude` 与 `~/.local/bin/claude-ssh`。`doctor` 的 PATH 检查只识别可执行文件；同名别名、函数以当前终端的 `type -a` 为准。
+
+### 与本机原生 CLI 共存
+
+只有确认 `~/.local/bin/claude` 是要保留的官方原生入口时，才使用下面的流程。先查看 `ls -l ~/.local/bin/claude` 并运行 `~/.local/bin/claude --version`，记录原始路径、链接目标和版本。复制到同一目录中的 `claude-local`，保留符号链接而不复制版本目录：
+
+```bash
+test ! -e ~/.local/bin/claude-local && test ! -L ~/.local/bin/claude-local &&
+    cp -a ~/.local/bin/claude ~/.local/bin/claude-local &&
+    ~/.local/bin/claude-local --version
+```
+
+如果 `claude-local` 已存在，第一条退出非零，先核对现有入口，不覆盖。确认两个入口的目标和版本一致后，在仓库中执行：
+
+```bash
+scripts/cvm install mac --dry-run --adopt
+scripts/cvm install mac --adopt
+```
+
+核对 dry run 的全部路径，不能用 `--adopt` 顺带接管未知文件。此后 `claude`、`claude-ssh` 用于 VPS，`claude-local` 用于 Mac；两端登录与设置分别保留。原生 CLI 若安装在 `/opt/homebrew/bin`、`/usr/local/bin` 等其他位置，保留该入口，可用其绝对路径启动，本项目只要求远端启动器在日常终端优先解析。
+
+复制的原生链接固定到当时的版本，不承诺随原生自动更新切换；不要把它改成指向 `~/.local/bin/claude`，否则会绕回远端启动器。更新本机原生 CLI 后，核对官方安装位置与版本，再调整 `claude-local`，并重新检查 `type -a claude`。卸载本桥接时按 [完整撤除桥接部署](operations.md#完整撤除桥接部署) 恢复原入口，保留原生版本目录与账号数据。
 
 ## 6. 可选 Mosh
 
 原部署使用 Homebrew Mosh 1.4.0，启动器从 PATH 查找 mosh。按 [Mosh 安装说明](https://mosh.org/#getting) 安装本机客户端；遵循自己的运行环境管理约定，不额外安装业务 Node/Python 或容器。
+
+Mosh 本身也要求两端有可用的 UTF-8 locale。若在 CLI 启动前就提示 locale 不可用，先核对两端 `locale` 和 `locale -a`；可只给这一次启动指定两端均支持的 locale，例如 `LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US:en claude`，不用改变整台 Mac 的语言。CLI 启动后仍须按 VPS 用户设置与实际出口检查环境。[Mosh locale 说明](https://mosh.org/#faq)
 
 交互终端默认用 Mosh；`claude-ssh` 强制 SSH。非终端、help/version/print 和子命令走 SSH。Mosh 端口占满时回退 SSH；UDP 建立阶段失败时需手动选择 claude-ssh，不自动启动第二个会话。
 

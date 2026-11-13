@@ -6,6 +6,15 @@
 
 需要可用的 root SSH 入口、TUN 设备、FUSE 和 Claude Code 所需的出站连接。`cvm` 和远端分发器不会从普通 SSH 用户自动提权。加入与 Mac 相同的 tailnet，记录两端 Tailscale IPv4。安装参照 [Tailscale Linux 文档](https://tailscale.com/docs/install/linux)。
 
+新建 VPS 使用 x86_64 或 ARM64、至少 4 GB 内存；先检查根分区及 `/home/claude` 所在分区的剩余空间，给 CLI 版本文件、会话日志和安装备份留余量。项目源码和构建依赖留在 Mac，但 VPS 仍会增长这些运行数据。历史 2 GiB 环境只代表轻负载样本。[官方系统要求](https://code.claude.com/docs/en/setup#system-requirements)
+
+```bash
+uname -m
+free -h
+df -h / /home
+test -c /dev/net/tun && test -c /dev/fuse
+```
+
 选 VPS 时先确认服务商允许普通用户使用 FUSE。`test -c /dev/fuse` 应退出 0；装了 `sshfs` 和 `fuse3` 并不代表设备可用。设备存在后，还需用 `claude` 用户实际挂载临时项目，见 [首次验收](operations.md#首次验收)。
 
 新加入 tailnet 的 VPS 可按下面的设置启用连接：
@@ -25,7 +34,30 @@ apt-get update
 apt-get install --no-install-recommends python3 openssh-client git ripgrep curl ca-certificates locales iproute2 sshfs fuse3 mosh
 ```
 
-Mosh 两端需要 UTF-8 locale。确认 en_US.UTF-8 已生成；若没有，在 `/etc/locale.gen` 启用该项后运行 locale-gen。系统时区按实际运维需求设置，与本链路的文件路由无关。
+### 配置 Claude 出口的时区与语言
+
+**这是本项目的部署前置要求：环境检查通过后，才能安装和登录 Claude Code。** 先确认访问 Anthropic 时实际使用的公网出口 IP 及所在地区，确定对应的 IANA 时区和当地语言的 UTF-8 locale，再配置服务器。不能只按服务器购买地区或 Mac 所在地区填写。服务可用地区以官方列表为准。[Claude 支持地区](https://support.claude.com/en/articles/8461763-where-can-i-access-claude)
+
+有出站代理或按域名分流时，通过实际代理配置和路由日志核对 Anthropic 域名的出口；单独访问 IP 查询站不一定经过同一路由。IPv4、IPv6 都可能承载请求时分别核对。出口地区不明确或两条路径不一致时，先处理网络条件，再继续。出口信息只记在自己的部署记录中，不提交到仓库。
+
+以**已核实的美国洛杉矶出口**为例，时区用 `America/Los_Angeles`，locale 用 `en_US.UTF-8`。其他地区替换为自己的值，不直接照抄。时间要求是时区正确且时钟同步，不是手动拨快或拨慢系统时钟。
+
+以 root 先备份 `/etc/localtime`、`/etc/timezone`、`/etc/default/locale` 和 `/etc/locale.gen` 中实际存在的文件，保留符号链接。然后在 `/etc/locale.gen` 启用 `en_US.UTF-8 UTF-8`，执行：
+
+```bash
+timedatectl set-timezone America/Los_Angeles
+locale-gen
+update-locale --reset LANG=en_US.UTF-8 LANGUAGE=en_US:en
+timedatectl status
+timedatectl show -p Timezone -p NTPSynchronized
+locale -a
+```
+
+`--reset` 清除系统 locale 文件里旧的分类覆盖值，避免只改 `LANG` 后仍有其他语言生效；使用前须已备份并确认这台服务器的语言调整范围。[Debian update-locale](https://manpages.debian.org/bookworm/locales/update-locale.8.en.html)
+
+本例应看到 `Timezone=America/Los_Angeles`、`NTPSynchronized=yes`，且 `locale -a` 包含 `en_US.utf8`。若时钟未同步，先检查已有的 timesyncd、chrony 等同步服务；使用 systemd 管理的时间同步服务时可运行 `timedatectl set-ntp true` 后再检查。全新 Debian 没有同步服务时，可安装并启用 `systemd-timesyncd`；已有其他同步服务时修复现有服务，不同时安装替代服务。没有同步成功就不继续安装 CLI。
+
+完成后重新连接 VPS。SSH/Mosh 可以传递 Mac 的语言变量，不能只凭系统默认值判断 Claude 实际环境；下一节要在 `claude` 账号中再检查，并为 CLI 固定会话环境。
 
 ## 2. 普通账号与官方订阅登录
 
@@ -34,10 +66,55 @@ Mosh 两端需要 UTF-8 locale。确认 en_US.UTF-8 已生成；若没有，在 
 ```bash
 useradd --create-home --user-group --shell /bin/bash claude
 chmod 700 /home/claude
+```
+
+以 root 切到实际运行 CLI 的账号；以下准备操作在该账号的 shell 中进行，仍未安装 CLI：
+
+```bash
 runuser -l claude
 ```
 
-接下来在 claude 用户的 shell 中安装官方原生 CLI 并本人登录：
+沿用上面的洛杉矶示例，在安装 shell 中明确设置并验证；其他地区同时替换这组值：
+
+```bash
+export TZ=America/Los_Angeles
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export LANGUAGE=en_US:en
+date '+%F %T %Z %z'
+locale
+locale charmap
+```
+
+要求时间和时区偏移符合出口地区（夏令时按实际日期判断）、`LANG` 与各 `LC_*` 分类采用所选 locale、字符集为 `UTF-8`，且没有 locale 警告。在这个普通用户环境下再次核对实际出口。代理若只写在 root 或交互 shell 配置中，不会自动成为远端分发器的环境；所需代理设置按 [官方网络配置](https://code.claude.com/docs/en/network-config) 为安装 shell 和 CLI 分别落实，保留现有网络方案。
+
+### 固定 Claude 会话环境
+
+在安装和首次登录前，为当前 VPS 的 `claude` 用户准备 `~/.claude/settings.json`。先运行 `install -d -m 700 ~/.claude`；文件已有时先校验 JSON 并备份，然后只合并以下 `env` 键，保留模型、权限、Hook 和其他环境变量。文件不存在时才创建以下 JSON：
+
+```json
+{
+  "env": {
+    "TZ": "America/Los_Angeles",
+    "LANG": "en_US.UTF-8",
+    "LC_ALL": "en_US.UTF-8",
+    "LANGUAGE": "en_US:en"
+  }
+}
+```
+
+这组值必须与前面已核实的服务器环境一致，属于部署配置，不是可选的模型偏好。CLI 的用户 `env` 设置会覆盖终端传入的同名变量；`LC_ALL` 统一 locale 分类，`LANGUAGE` 避免保留客户端的翻译语言。这样 SSH、Mosh 可以继续使用 Mac 自己的语言，而 CLI 按 VPS 的部署环境运行。[官方 env 设置及优先级](https://code.claude.com/docs/en/settings-reference#env)
+
+```bash
+chmod 600 ~/.claude/settings.json
+/usr/bin/python3 -m json.tool ~/.claude/settings.json >/dev/null
+```
+
+还需核对项目、项目本地、受管设置和 `--settings` 是否覆盖了这四个环境变量；存在冲突时按真实生效来源修正，不能只验证用户文件。出口变化后，应同时重新核对系统设置和 CLI 的这四个值，再新开会话验收。
+
+### 安装和登录
+
+**只有实际出口、服务器时区、语言、时钟同步，以及当前安装 shell 和 CLI 环境设置全部确认后，才执行：**
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash
@@ -48,6 +125,8 @@ curl -fsSL https://claude.ai/install.sh | bash
 按 CLI 提示完成官方登录；用 `/exit` 退出 CLI，再用 `~/.local/bin/claude auth status` 确认登录。随后退出该用户 shell 返回 root。无需 root 先登录，也不需要 npm、第三方 SDK 或 API 中转。[官方安装与认证说明](https://code.claude.com/docs/en/setup)
 
 **已有环境**：复用 claude 用户及其原生 CLI、订阅登录。不要执行 useradd，不调用 logout，不把凭据复制到 Mac 或仓库。不使用原部署的 root→普通用户迁移脚本作为新安装器；需要迁移时另行核对会话、路径和凭据归属。
+
+已有 CLI 的机器同样需要完成上面的环境检查与按键合并，再新开会话；不为满足准备顺序重装 CLI。后续通过 SSH 和 Mosh 分别完成 [运行环境验收](operations.md#运行环境验收)。
 
 ## 3. 安装部署源
 
@@ -106,8 +185,21 @@ cat ~/.ssh/claude_mac_ed25519.pub
    claude-mac-project ssh-ed25519 __VERIFIED_MAC_PUBLIC_HOST_KEY__
    ```
 
-3. 依据 `examples/mac-connection.json` 创建 `~/claude-vps-mac/mac-connection.json`。
+3. 全新部署先在当前 `claude` 用户 shell 创建登记目录，再依据 `examples/mac-connection.json` 创建其中的 JSON；模板从 Mac 仓库读取，不假设 VPS 已克隆仓库。已有状态目录先按 [状态目录升级步骤](operations.md#已有部署的状态目录) 核对，不覆盖已有登记。
+
+   ```bash
+   mkdir -p ~/claude-vps-mac
+   chmod 700 ~/claude-vps-mac
+   ```
+
+   把模板中的 Mac 用户名、用户 home 和 Tailscale IP 换成实际值后保存为 `~/claude-vps-mac/mac-connection.json`。实际 SSH 目标由前面的 `~/.ssh/config` 决定，登记内容应与之保持一致。
 4. config、known_hosts、登记 JSON 和私钥均设为 600，所属用户 claude；登记 JSON 不包含密钥。
+
+   ```bash
+   chmod 600 ~/.ssh/config ~/.ssh/claude_mac_known_hosts ~/.ssh/claude_mac_ed25519 \
+       ~/claude-vps-mac/mac-connection.json
+   /usr/bin/python3 -m json.tool ~/claude-vps-mac/mac-connection.json >/dev/null
+   ```
 
 先验证只读连接：
 
@@ -120,7 +212,7 @@ mac-project exec '/absolute/Mac/project/path' 'uname -s; pwd; git status --short
 
 ## 5. CLI 设置与全局规则
 
-将 [`examples/claude-settings.json`](../examples/claude-settings.json) 的 Bash PreToolUse Hook 合并到 `/home/claude/.claude/settings.json`。保留已有 Hook，不重复添加同一命令；文件由 `claude` 用户持有，权限设为 600。[官方 hooks 格式](https://code.claude.com/docs/en/hooks)
+将 [`examples/claude-settings.json`](../examples/claude-settings.json) 的 Bash PreToolUse Hook 合并到 `/home/claude/.claude/settings.json`。保留前面固定的环境变量和已有 Hook，不重复添加同一命令；文件由 `claude` 用户持有，权限设为 600。[官方 hooks 格式](https://code.claude.com/docs/en/hooks)
 
 路由 Hook 对转发的 Bash 命令返回 `allow`；安装前要理解其执行权限。它与 CLI 的 `permissions.defaultMode` 分开生效，仅改后者不会改变路由 Hook 的放行行为。
 

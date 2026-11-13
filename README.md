@@ -13,7 +13,8 @@
 | 对象 | 准备条件 |
 | --- | --- |
 | Mac | Tailscale、远程登录、`/usr/bin/python3`、Git 和 ripgrep。登录账号可读写项目及其所在磁盘，非交互登录环境能找到项目工具链。 |
-| VPS | Debian 12，可通过 SSH 以 root 登录，具备 TUN、`/dev/fuse` 和普通用户 FUSE 挂载能力。官方 CLI 使用固定账号 `claude` 与 `/home/claude`。 |
+| VPS | Debian 12，x86_64/ARM64、至少 4 GB 内存，检查 CLI、日志与备份所需的磁盘余量。可通过 SSH 以 root 登录，具备 TUN、`/dev/fuse` 和普通用户 FUSE 挂载能力。官方 CLI 使用固定账号 `claude` 与 `/home/claude`。[系统准备](docs/setup-vps.md#1-系统与网络前提) |
+| Claude 出口 | **安装和登录 Claude Code 前必须完成：** 确认实际公网出口 IP 及地区，将服务器时区、语言与之匹配，使用 UTF-8 并确认时钟同步。再固定 VPS 用户的 CLI 环境，防止 SSH/Mosh 传入的 Mac 语言覆盖它。[配置步骤](docs/setup-vps.md#配置-claude-出口的时区与语言) |
 | 连接与账号 | 两端加入同一 tailnet，允许双向 SSH，核对并固定主机密钥。准备自己的 Claude 账号与可用订阅，Mosh 可选。 |
 
 在 Mac 上克隆仓库：
@@ -23,7 +24,7 @@ git clone https://github.com/a1461750564/claude-vps-mac.git
 cd claude-vps-mac
 ```
 
-按 [从准备到首次验收](docs/deploy.md) 配置两端依赖、VPS 普通账号与官方 CLI、管理 SSH 和本地 `launcher.json`。确认管理 SSH 能非交互以 root 登录后，在 Mac 仓库目录安装桥接脚本与启动器：
+按 [从准备到首次验收](docs/deploy.md) 先完成服务器环境检查，再准备 VPS 普通账号与官方 CLI、管理 SSH 和本地 `launcher.json`。Mac 已安装原生 Claude 时，先按 [共存步骤](docs/setup-mac.md#与本机原生-cli-共存) 保留本地入口。确认管理 SSH 能非交互以 root 登录后，在 Mac 仓库目录安装桥接脚本与启动器：
 
 ```bash
 scripts/cvm install vps --dry-run
@@ -41,6 +42,8 @@ scripts/cvm doctor
 ```
 
 体检核对两端脚本、官方 CLI、回连 Mac 的 Git/rg、当前 PATH 中的启动入口和 Hook。实际终端还应运行 `type -a claude` 与 `type -a claude-ssh`，确认优先使用本地启动器。首次使用在临时项目目录运行 `claude-ssh --version` 和 `claude-ssh`，按 [首次验收](docs/operations.md#首次验收) 完成读写、搜索、执行主机与进程清理检查。配置 Mosh 后再验交互会话。
+
+时区、语言与出口一致是本项目的部署要求，由部署者在安装前核实；`cvm` 不自动配置或判断 IP 地区，`doctor` 全部通过也不能替代 [SSH/Mosh 运行环境验收](docs/operations.md#运行环境验收)。后续升级、回退或卸载按 [维护步骤](docs/operations.md#升级部署) 操作，保留官方 CLI、账号数据与共享服务。
 
 路由 Hook 的配置与模型、压缩窗口、缓存、隐私等个人偏好分别提供在 [claude-settings.json](examples/claude-settings.json) 和 [claude-preferences.json](examples/claude-preferences.json)。后者可按需合并，已有设置按键保留。
 
@@ -170,7 +173,7 @@ claude-ssh    # 强制使用 SSH
 | [链路与边界](docs/architecture.md) | 通道、工具路由、一致性、权限与失败回退 |
 | [配置 VPS](docs/setup-vps.md) | 普通用户、CLI 登录、SSHFS、hook 与防火墙 |
 | [配置 Mac](docs/setup-mac.md) | Tailscale、远程登录、固定主机密钥与启动器 |
-| [使用、验收与回退](docs/operations.md) | 首次验收、诊断顺序、故障处理与定点撤回 |
+| [使用、验收与回退](docs/operations.md) | 环境和工具验收、诊断、升级、定点回退与完整撤除桥接 |
 | [部署经验与测量](docs/deployment-experience.md) | 瓶颈、改进、代价及待验收项 |
 | [验证记录](docs/validation.md) | 原部署实测、仓库测试与线上切换记录 |
 | [变更记录](CHANGELOG.md) | 各版本内容 |

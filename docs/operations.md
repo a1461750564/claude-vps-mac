@@ -19,6 +19,8 @@
 
 先在 Mac 仓库目录运行 `scripts/cvm doctor`。它核对两端脚本、VPS CLI、双向连接、Hook、git/rg 包装和 Mosh 端口，检查当前 PATH 中的启动入口，并经 `mac-project exec` 验证 Mac 登录环境的 Git/rg。它会通过安装路径执行 `claude --version`，但不运行模型，也不写测试文件。CLI 版本变化时会提示重做验收。
 
+`doctor` 不判断出口 IP 的地理位置，也不检查时区、语言与时钟同步；全部 OK 不能代替下方的 [运行环境验收](#运行环境验收)。安装前的环境准备按 [VPS 配置](setup-vps.md#配置-claude-出口的时区与语言) 完成，不等到 doctor 才处理。
+
 使用独立测试目录，不直接以业务项目试错。以下既是首次安装验收，也是 CLI 更新后的最低回归范围：
 
 1. 在 Mac 项目所在磁盘新建一个空的临时目录，记下绝对路径。VPS 以 `claude` 用户运行 `mac-project check`，核对 Darwin 和 Mac 账号。再将以下命令中的路径换成该临时目录：
@@ -29,7 +31,7 @@
    ```
 
    确认输出版本与 `cvm-write-ok`，并在 Mac 独立读回 `.cvm-write-check`。这一步验证回连命令和目录权限。再在 Mac 的临时目录运行 `git init`，供下面的 Git 路由检查使用。
-2. 在实际使用的 Mac 终端，用 `type -a claude`、`type -a claude-ssh` 核对入口。进入临时目录运行 `claude-ssh --version`，验证启动器能以 VPS 普通用户建立项目挂载并运行官方 CLI。再运行 `claude-ssh` 核对订阅和权限模式。
+2. 在实际使用的 Mac 终端，用 `type -a claude`、`type -a claude-ssh` 核对入口。进入临时目录运行 `claude-ssh --version`，验证启动器能以 VPS 普通用户建立项目挂载并运行官方 CLI。再运行 `claude-ssh` 核对订阅、权限模式，并完成下方运行环境验收；启用 Mosh 后再验一次。
 3. 在对话中调用 Bash 执行 `uname -s; pwd`，检查 Hook 自动路由。执行 `uname -s #vps` 应返回 Linux。`command -v git #vps` 应返回 `~/.local/libexec/claude-mac/git`，`git rev-parse --show-toplevel #vps` 应返回临时项目在 VPS 上的挂载路径。
 4. 准备一个文本夹具和独立测试，让 Claude 原生 Read、Edit、Write；Mac 本机独立读回 diff，运行测试并核对退出码和 Darwin，不修改测试断言。
 5. 如需图像、子 agent、Notebook、MCP、项目 hooks，逐项验证真实工具调用和执行主机。基本文本验收不能代表这些能力全部可用。
@@ -37,6 +39,18 @@
 6. 在无业务影响的 sleep 测试中验证超时和停止后 Mac 子进程结束；对真实编辑中断先读回状态，再决定重试。
 
 全新 VPS、其他 CLI 版本和新增能力都按上列步骤独立验收；历史结果见 [验证记录](validation.md)。
+
+### 运行环境验收
+
+先在 VPS 管理终端检查 `timedatectl show -p Timezone -p NTPSynchronized`：系统时区应符合已确认的实际出口地区，`NTPSynchronized=yes`。然后在 Mac 临时项目中分别使用 `claude-ssh` 和配置好 Mosh 后的 `claude` 新开会话，在各自会话的 Bash 工具中执行：
+
+```bash
+id -un; uname -s; date '+%F %T %Z %z'; locale; locale charmap #vps
+```
+
+`#vps` 必须保留，否则默认测到的是 Mac。两次都应返回 `claude`、`Linux`、符合出口地区的时间与偏移，以及预期的语言和 `UTF-8` 字符集。例如洛杉矶示例应使用 `en_US.UTF-8`，时间偏移随夏令时变化。Mosh 可能因未安装或端口占满回退 SSH；只有实际进入 Mosh 并确认 `mosh-server` 监听对应 Tailscale 地址时，才记录为 Mosh 验收通过。
+
+核对实际 CLI 访问 Anthropic 的代理/路由日志与准备阶段一致；不以 Mac 出口、root shell 或普通 IP 查询站的出口代替。若语言或时区不一致，检查 VPS 用户 `settings.json` 中的 `env.TZ/LANG/LC_ALL/LANGUAGE`，以及项目、项目本地、受管设置和 `--settings` 的覆盖。按 [固定 Claude 会话环境](setup-vps.md#固定-claude-会话环境) 修正后新开会话复验；不要求把整台 Mac 改成服务器语言。
 
 ## 中文状态栏
 
@@ -90,7 +104,8 @@ test -f "$EXISTING_STATE_DIR/mac-connection.json" &&
 
 保留原文件及修改前指纹；只撤回对应新增项，避免恢复整份旧 settings 或防火墙。
 
-- cvm 安装：每次替换前的文件按原路径存放在 VPS `/var/lib/claude-vps-mac/backups/<时间>/`、Mac `~/.local/state/claude-vps-mac/backups/<时间>/`，用 `cp -a` 复制回原位置即可撤回单个文件。撤回后 doctor 报告与仓库不同，这是预期。
+- cvm 安装：每次替换前的文件按原路径存放在 VPS `/var/lib/claude-vps-mac/backups/<时间>/`、Mac `~/.local/state/claude-vps-mac/backups/<时间>/`。先退出受影响的会话，核对当前文件仍为本次安装内容，再从选定的备份恢复单个文件，保留链接、属主与权限；VPS 恢复由 root 执行。目标当前是符号链接时先核对并移开该链接，不让复制穿过链接改写其目标。撤回后 doctor 报告与仓库不同，这是预期。
+- 首次新增的文件没有旧备份：依据部署前保存的 dry run 中 `new` 项和安装清单，核对当前指纹后仅移除这些新增文件或链接。不能把“备份中没有”直接认定为本次新增；后续安装会重写 manifest，它不保存完整安装历史。
 - Bash 路由：仅删除 hooks.PreToolUse 中 command 为 route-bash-to-mac.py 的条目，保留其他 hook；同步更新工作流提示，随后新开会话。此时 Bash 回到 VPS，不能继续把构建命令当作在 Mac 执行。
 - Git 路由：删除 `~/.local/libexec/claude-mac/git`，新会话的 CLI 回到 VPS git（经挂载，较慢）；不需要改 settings 或启动器。
 - 搜索路由：恢复备份中的 claude-mac（撤回 `USE_BUILTIN_RIPGREP=0`），新开会话恢复内置搜索；只删除 rg 包装会在 PATH 上缺少 rg 时导致工具报错。
@@ -98,3 +113,23 @@ test -f "$EXISTING_STATE_DIR/mac-connection.json" &&
 - Mac 启动器：恢复自己备份的入口；保留已存在的官方 CLI，核对 PATH。
 - CLI 登录：不执行 logout，不从历史备份恢复过期令牌。保留普通用户的现有登录与凭据权限。
 - 状态路径：保留原目录和实际挂载路径，按上节建立名称链接；不要直接改名或搬移 projects，改变 cwd 身份会影响会话恢复。
+
+## 升级部署
+
+1. 在 Mac 仓库确认工作区、当前提交与目标版本，阅读变更说明；有本地修改时先处理，不覆盖。保留两端当前 `manifest.json`、本轮 dry run 输出和待修改配置的备份，记录实际 CLI 版本。备份留在自己的机器上，不提交仓库。
+2. 使用干净、已验证的目标仓库提交。分别运行 `scripts/cvm install vps --dry-run` 和 `scripts/cvm install mac --dry-run`，核对所有 `new/update/modified/unmanaged` 项；后两者需明确接管，不能无差别加 `--adopt`。已有状态目录名称按前文处理。
+3. 正常退出使用本桥接的 SSH/Mosh 会话及关联后台任务，然后依次执行 `scripts/cvm install vps`、`scripts/cvm install mac`。安装器逐文件替换，不提供整批事务；中途失败先核对实际文件与备份，不能假定整批都没有安装。
+4. 新开临时项目，运行 `scripts/cvm doctor`、运行环境验收与首次工具验收。失败时先停用这次部署，按安装清单定点恢复，不改名或清空项目挂载状态目录。
+
+官方 CLI 与桥接脚本分开更新。原生 CLI 默认会自动更新，因此桥接提交不变时 CLI 版本也可能变化；版本变化后同样执行首次验收。稳定更新通道、指定版本等能力按 [官方版本管理](https://code.claude.com/docs/en/setup#update-claude-code) 配置，不把历史实测版本当作所有环境的默认版本。需要回退 CLI 时使用官方安装方式选择已验证版本，不恢复旧订阅令牌。
+
+## 完整撤除桥接部署
+
+这里撤除的是本项目的桥接能力。项目源码、官方 CLI、订阅登录、Claude 会话、共享的 Tailscale/SSH 服务及其他业务配置保留；若还要删除账号数据或共享服务，另行确定范围。
+
+1. **留好恢复依据并停止会话。** 保存两端安装清单、配置备份、专用 SSH 公钥指纹和原生入口信息。用 `/exit` 退出相关会话，停止这些会话的后台任务。关闭窗口不能证明 Mosh 已退出；按进程用户和命令核对本项目会话，不按进程名批量终止。
+2. **解除挂载。** 在 VPS 核对本项目状态目录下的实际 SSHFS 挂载，以 `claude` 用户逐一执行 `fusermount3 -u '<已核对的具体挂载点>'`。忙挂载先查使用者并正常退出，不强制或懒卸载。尚有挂载时不得删除状态目录。
+3. **撤除用户设置。** 仅撤销本项目的 Bash Hook、中文状态栏和工作流提示，保留其他设置。专门为此部署加入的环境变量、模型偏好按修改前的值逐键恢复；如果 VPS 官方 CLI 仍按本方案使用出口，保留对应的时区和语言配置。系统时区、locale、时钟同步影响整台服务器，不随桥接卸载自动恢复。
+4. **撤回安装文件。** 按 [README 安装位置表](../README.md#组件) 与 manifest 核对脚本和链接。被替换的文件恢复已核实备份，本次新建且指纹未变的文件才移除；有后续修改的先保留处理。Mac 先移除确认属于本项目的 `claude-ssh`、`claude-mosh` 链接，再恢复原 `claude` 入口。使用过 `claude-local` 时核对其原生版本目标，不删除 `~/.local/share/claude` 或 `~/.claude`。新终端用 `type -a claude` 和原生入口的 `--version` 核验。
+5. **撤销专用回连授权。** 确认任务已停止，在 VPS 的 `claude` 用户下执行 `ssh -O exit mac-project` 关闭这条专用复用连接（没有主连接时的报错不代表仍有连接）。在 Mac 的 `authorized_keys` 中按已记录的公钥内容/指纹，仅移除本项目那一行；删除公钥行不会终止已经建立的 SSH 会话，应另行核对本项目连接已结束。再逐项移除专用 `Host mac-project` 块、专用私钥/公钥、known_hosts 文件及登记 JSON。共享密钥或文件只撤销本项目条目，不整份删除。
+6. **撤销 Mac 管理配置并收尾。** 移除专用 launcher JSON 与 SSH Host 块；管理公钥只有在确认本项目独占、且仍有独立可用的 VPS 管理入口时才撤销。关闭对应的专用复用连接，保留共享连接。只撤销本项目添加的 Mosh 端口规则，不关闭 SSH/Tailscale 服务。挂载全部解除后，空挂载目录可以移除；安装备份、清单、会话数据先保留。确认其他 SSH 和项目使用正常，再按自己的保留策略清理备份。
